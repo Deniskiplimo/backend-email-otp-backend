@@ -1,0 +1,129 @@
+{
+    "swagger": "2.0",
+    "info": {
+      "title": "Auth Verification API",
+      "version": "1.0.0",
+      "description": "API for user registration, login, and password reset"
+    },
+    "host": "localhost:3000",
+    "basePath": "/api",
+    "tags": [
+      {
+        "name": "Authentication",
+        "description": "API for user registration, login, and password reset"
+      }
+    ],
+    "paths": {
+      "/auth/register": {
+        "post": {
+          "tags": ["Authentication"],
+          "summary": "Register a new user",
+          "description": "Creates a new user account",
+          "parameters": [
+            {
+              "name": "body",
+              "in": "body",
+              "required": true,
+              "schema": {
+                "$ref": "#/definitions/User"
+              }
+            }
+          ],
+          "responses": {
+            "201": {
+              "description": "User registered successfully"
+            },
+            "400": {
+              "description": "User already exists"
+            }
+          }
+        }
+      },
+      "/auth/login": {
+        "post": {
+          "tags": ["Authentication"],
+          "summary": "Login a user",
+          "description": "Authenticates a user and returns a JWT token",
+          "parameters": [
+            {
+              "name": "body",
+              "in": "body",
+              "required": true,
+              "schema": {
+                "$ref": "#/definitions/Login"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "User logged in successfully"
+            },
+            "401": {
+              "description": "Unauthorized"
+            }
+          }
+        }
+      },
+      "/auth/forgot-password": {
+        "post": {
+          "tags": ["Authentication"],
+          "summary": "Request a password reset link",
+          "description": "Sends an email with a password reset link.",
+          "parameters": [
+            {
+              "name": "body",
+              "in": "body",
+              "required": true,
+              "schema": {
+                "$ref": "#/definitions/ForgotPassword"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Email sent successfully"
+            },
+            "404": {
+              "description": "User does not exist"
+            }
+          }
+        }
+      }
+    },
+    "definitions": {
+      "User": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          }
+        }
+      },
+      "Login": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          }
+        }
+      },
+      "ForgotPassword": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+  
