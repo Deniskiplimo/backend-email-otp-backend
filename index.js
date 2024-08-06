@@ -1,27 +1,213 @@
-const express = require('express'); 
+require('dotenv').config();
+const express = require('express');
 const mongoose = require('mongoose');
-const dotenv = require('dotenv');
-const swaggerUi = require('swagger-ui-express'); 
+const swaggerUi = require('swagger-ui-express');
 const swaggerDocument = require('./swagger/swagger.json');
 const bodyParser = require('body-parser');
 const nodemailer = require('nodemailer');
-const smtpTransport = require('nodemailer-smtp-transport');
-const jwt = require('jsonwebtoken'); 
+const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const UserAccount = require('./models/UserAccount');
-
-dotenv.config();
+const crypto = require('crypto');
+const sendEmail = require('./utils/sendEmail');
+const randomstring = require('randomstring');
+const Otps = require('./models/otpModel');
 
 const app = express();
-const port = process.env.PORT || 3000;
+const port = process.env.APP_PORT || 3000; // Use APP_PORT for the application server
 
 app.use(bodyParser.json());
 
-mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+// Connect to MongoDB
+mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('MongoDB connected'))
-  .catch(err => console.log(err));
-   
-/** 
+  .catch(err => console.error('MongoDB connection error:', err));
+
+// Create transporter object using SMTP transport
+const transporter = nodemailer.createTransport({
+  host: process.env.HOST,
+  port: process.env.PORT,
+  secure: process.env.PORT == 465, // true for port 465 (SSL), false for other ports (TLS)
+  auth: {
+    user: process.env.USERNAME,
+    pass: process.env.PASS,
+  },
+});
+
+// Function to generate OTP
+function generateOTP() {
+  return randomstring.generate({
+    length: 6,
+    charset: 'numeric',
+  });
+}
+
+// Function to send OTP via email
+function sendOTP(email, otp, callback) {
+  const mailOptions = {
+    from: process.env.USERNAME, // Use USERNAME for the sender's email address
+    to: email,
+    subject: 'Your OTP Code',
+    text: `Your OTP code is ${otp}`,
+  };
+
+  transporter.sendMail(mailOptions, (error, info) => {
+    if (error) {
+      console.error('Error sending OTP:', error);
+      callback(error);
+    } else {
+      console.log('OTP sent:', info.response);
+      callback(null, info.response);
+    }
+  });
+}
+
+/**
+ * @swagger
+ * /api/otp/send:
+ *   post:
+ *     summary: Generate and send an OTP to the specified email address
+ *     tags:
+ *       - OTP
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: user@example.com
+ *     responses:
+ *       200:
+ *         description: OTP sent successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: OTP sent successfully
+ *       400:
+ *         description: Bad request, email is required or invalid
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Email is required or invalid
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Error sending OTP
+ */
+app.post('/api/otp/send', async (req, res) => {
+  const { email } = req.body;
+
+  // Validate email
+  if (!email || !/\S+@\S+\.\S+/.test(email)) {
+    return res.status(400).json({ message: 'Email is required and must be valid' });
+  }
+
+  const otp = generateOTP();
+  
+  // Save OTP to the database
+  const newOTP = new Otps({ email, otp });
+  await newOTP.save();
+
+  // Send OTP and handle errors
+  sendOTP(email, otp, (error, response) => {
+    if (error) {
+      return res.status(500).json({ message: 'Error sending OTP' });
+    }
+    res.status(200).json({ message: 'OTP sent successfully' });
+  });
+});
+
+/**
+ * @swagger
+ * /api/otp/verify:
+ *   post:
+ *     summary: Verify OTP
+ *     description: Verifies the provided OTP for the given email address.
+ *     tags:
+ *       - OTP
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: user@example.com
+ *               otp:
+ *                 type: string
+ *                 example: '123456'
+ *     responses:
+ *       200:
+ *         description: OTP verification successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: OTP verification successful
+ *       400:
+ *         description: Invalid OTP
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Invalid OTP
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Error verifying OTP
+ */
+app.post('/api/otp/verify', async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+    const existingOTP = await Otps.findOneAndDelete({ email, otp });
+
+    if (existingOTP) {
+      // OTP is valid
+      res.status(200).json({ message: 'OTP verification successful' });
+    } else {
+      // OTP is invalid
+      res.status(400).json({ message: 'Invalid OTP' });
+    }
+  } catch (error) {
+    console.error('Error verifying OTP:', error);
+    res.status(500).json({ message: 'Error verifying OTP' });
+  }
+});
+
+/**
  * @swagger
  * /api/auth/register:
  *   post:
@@ -153,7 +339,7 @@ app.post('/api/auth/login', async (req, res) => {
  * /api/auth/forgot-password:
  *   post:
  *     summary: Request a password reset link
- *     description: Sends an email with a password reset link.
+ *     description: Sends an email with a password reset link containing a time-limited token.
  *     tags:
  *       - Authentication
  *     requestBody:
@@ -168,7 +354,7 @@ app.post('/api/auth/login', async (req, res) => {
  *                 example: user@example.com
  *     responses:
  *       200:
- *         description: Email sent successfully
+ *         description: Password reset email sent successfully
  *         content:
  *           application/json:
  *             schema:
@@ -220,115 +406,137 @@ app.post('/api/auth/forgot-password', async (req, res) => {
 
     // Create a password reset link
     const front = process.env.FRONT_URL;
-    const resetLink = `${front}/auth/reset/${user._id}/${token}`;
+    const resetLink = `${front}/reset-password?token=${token}`;
 
-    // Create an email transport
-    const transporter = nodemailer.createTransport(
-      smtpTransport({
-        host: process.env.HOST,
-        port: process.env.PORTS,
-        secure: false,
-        tls: {
-          rejectUnauthorized: false,
-        },
-        auth: {
-          user: process.env.USERNAME,
-          pass: process.env.PASS,
-        },
-      })
-    );
-
-    // Compose the email
+    // Send the password reset email
     const mailOptions = {
-      from: process.env.USERNAME,
+      from: process.env.USERNAME, // Use USERNAME for the sender's email address
       to: email,
-      subject: "Reset Password Link",
-      html: `<p>Click the link to reset your password: <a href="${resetLink}">Reset Password</a></p>`,
+      subject: 'Password Reset Request',
+      text: `You requested a password reset. Click the following link to reset your password: ${resetLink}`,
     };
 
-    // Send the email
-    const info = await transporter.sendMail(mailOptions);
+    transporter.sendMail(mailOptions, (error, info) => {
+      if (error) {
+        console.error('Error sending email:', error);
+        return res.status(500).json({ Status: "Error", message: "Failed to send email" });
+      }
 
-    return res.json({ Status: "Success", info });
+      res.status(200).json({ Status: "Success", info });
+    });
   } catch (error) {
-    console.error(error);
     res.status(500).json({ Status: "Error", message: error.message });
   }
 });
 
-// Create transporter object using SMTP transport
-const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: process.env.SMTP_PORT,
-    secure: false,
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-  });
-  
-  // Function to generate OTP
-  function generateOTP() {
-    return crypto.randomInt(100000, 999999).toString();
-  }
-  
-  // Function to send OTP via email
-  function sendOTP(email, otp) {
-    const mailOptions = {
-      from: process.env.SMTP_USER,
-      to: email,
-      subject: 'Your OTP Code',
-      text: `Your OTP code is ${otp}`,
-    };
-  
-    transporter.sendMail(mailOptions, (error, info) => {
-      if (error) {
-        console.log('Error:', error);
-      } else {
-        console.log('Email sent:', info.response);
-      }
-    });
-  }
-  
-  /**
-   * @swagger
-   * /send-otp:
-   *   post:
-   *     summary: Generate and send an OTP to the specified email address
-   *     tags:
-   *       - OTP
-   *     requestBody:
-   *       required: true
-   *       content:
-   *         application/json:
-   *           schema:
-   *             type: object
-   *             properties:
-   *               email:
-   *                 type: string
-   *                 format: email
-   *                 example: user@example.com
-   *     responses:
-   *       200:
-   *         description: OTP sent successfully
-   *       400:
-   *         description: Bad request
-   */ 
-  app.post('/send-otp', (req, res) => {
-    const { email } = req.body;
-    if (!email) { 
-      return res.status(400).send('Email is required');
-    }
-  
-    const otp = generateOTP();
-    sendOTP(email, otp);
-  
-    res.status(200).send('OTP sent');
-  });
+/**
+ * @swagger
+ * /api/auth/reset-password:
+ *   post:
+ *     summary: Reset user password
+ *     description: Resets the user's password with a valid token and new password. Ensures token validity and password strength.
+ *     tags:
+ *       - Authentication
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               token:
+ *                 type: string
+ *                 example: jwt_reset_token_here
+ *               newPassword:
+ *                 type: string
+ *                 example: newpassword123
+ *                 minLength: 8
+ *                 pattern: "^(?=.*[a-zA-Z])(?=.*[0-9]).{8,}$"
+ *     responses:
+ *       200:
+ *         description: Password reset successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Password reset successfully
+ *       400:
+ *         description: Bad Request
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Invalid or expired token
+ *       404:
+ *         description: User not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: User not found
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Error resetting password
+ */
+app.post('/api/auth/reset-password', async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
 
-// Swagger setup
+    // Validate request
+    if (!token || !newPassword) {
+      return res.status(400).json({ message: 'Token and new password are required' });
+    }
+
+    // Validate password strength
+    if (newPassword.length < 8 || !/[0-9]/.test(newPassword) || !/[a-zA-Z]/.test(newPassword)) {
+      return res.status(400).json({ message: 'Password must be at least 8 characters long and contain both letters and numbers' });
+    }
+
+    // Verify the token
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (err) {
+      return res.status(400).json({ message: 'Invalid or expired token' });
+    }
+
+    // Find the user by ID from the token
+    const user = await UserAccount.findById(decoded.id);
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Hash the new password and update the user's password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    user.password = hashedPassword;
+    await user.save();
+
+    res.status(200).json({ message: 'Password reset successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error resetting password' });
+  }
+});
+
+// Swagger UI setup
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
 app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
+  console.log(`Server is running on port ${port}`);
 });
