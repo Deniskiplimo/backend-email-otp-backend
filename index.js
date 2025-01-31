@@ -1,17 +1,24 @@
 require('dotenv').config();
+const ip = '8.8.8.8';
+const { query, validationResult } = require('express-validator');
+const authenticateRefreshToken = require('./middleware/authenticateRefreshToken');
 const express = require('express');
 const mongoose = require('mongoose');
+
+const RefreshToken = require('./models/refreshTokenModel');
+const { generateAccessToken, generateRefreshToken } = require('./utils/tokenUtils');
+const User = require('./models/userModel');
 const swaggerUi = require('swagger-ui-express');
+const rateLimit = require('express-rate-limit');
 const swaggerDocument = require('./swagger.json');
 const bodyParser = require('body-parser');
+const geoip = require('geoip-lite');
 const nodemailer = require('nodemailer');
+const geo = geoip.lookup(ip);  // Example usage of geoip to track location of the request
+console.log(geo);
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
-const UserAccount = require('./models/UserAccount');
-const crypto = require('crypto');
 const sendEmail = require('./utils/sendEmail');
-const randomstring = require('randomstring');
-const Otps = require('./models/otpModel');
 const { exec } = require('child_process');
 const axios = require('axios');
 const fs = require('fs'); 
@@ -19,10 +26,92 @@ const app = express();
 const port = process.env.APP_PORT || 3000; // Use APP_PORT for the application server
 const aiRoutes = require('./routes/aiRoutes');
 const chatbotRoutes = require('./routes/chatbotRoutes');
+const otpRoutes = require('./routes/otpRoutes');
 app.use(bodyParser.json());
+const winston = require('winston');
+require('winston-daily-rotate-file'); // Make sure to require this
+
+const transport = new winston.transports.DailyRotateFile({
+  filename: 'logs/%DATE%-results.log', // Log file name pattern
+  datePattern: 'YYYY-MM-DD',           // Date format for the filename
+  zippedArchive: true,                 // Whether to compress old logs
+  maxSize: '20m',                      // Max file size before rotation
+  maxFiles: '14d'                      // Keep logs for 14 days
+});
+
+const logger = winston.createLogger({
+  level: 'info',
+  transports: [
+    new winston.transports.Console(),  // Console logging
+    transport                          // Log rotation
+  ]
+});
+
+// Example log
+logger.info('This is an info log message');
+
+
+
+
+const STATUS_CODES = {
+  OK: 200,
+  CREATED: 201,
+  ACCEPTED: 202,
+  NO_CONTENT: 204,
+  BAD_REQUEST: 400,
+  UNAUTHORIZED: 401,
+  FORBIDDEN: 403,
+  NOT_FOUND: 404,
+  METHOD_NOT_ALLOWED: 405,
+  INTERNAL_SERVER_ERROR: 500,
+  NOT_IMPLEMENTED: 501,
+  BAD_GATEWAY: 502,
+  SERVICE_UNAVAILABLE: 503,
+  GATEWAY_TIMEOUT: 504,
+};
+
+const ERROR_MESSAGES = {
+  MISSING_CREDENTIALS: 'Missing username or password.',
+  INVALID_CREDENTIALS: 'Invalid username or password.',
+  INTERNAL_ERROR: 'An unexpected error occurred. Please try again later.',
+  // Add more error messages as needed
+};
+ // Example of a route to refresh token
+app.post('/refresh-token', authenticateRefreshToken, (req, res) => {
+  // Here, you can implement logic to generate a new access token
+  const { userId } = req.user;
+  const accessToken = jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: '1h' });
+  res.json({ accessToken });
+});
+app.post('/api/refresh-token', async (req, res) => {
+  const { refreshToken } = req.body; 
+  
+  if (!refreshToken) {
+    return res.status(400).json({ error: 'Refresh token is required' });
+  }
+
+  try {
+    const existingToken = await RefreshToken.findOne({ token: refreshToken });
+
+    if (!existingToken) {
+      return res.status(400).json({ error: 'Invalid or expired refresh token' });
+    }
+
+    const { userId } = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
+
+    const newAccessToken = jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: '15m' });
+
+    res.status(200).json({ accessToken: newAccessToken });
+  } catch (error) {
+    console.error('Error refreshing token:', error);
+    res.status(500).json({ error: 'Error refreshing token' });
+  }
+});
+
       // General AI routes
 app.use('/api', chatbotRoutes);
-// Connect to MongoDB
+app.use('/api', otpRoutes);
+// Connect to MongoDB   
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('MongoDB connected'))
   .catch(err => console.error('MongoDB connection error:', err));
@@ -38,536 +127,484 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// Function to generate OTP
-function generateOTP() {
-  return randomstring.generate({
-    length: 6,
-    charset: 'numeric',
-  });
-}
-
-// Function to send OTP via email
-function sendOTP(email, otp, callback) {
-  const mailOptions = {
-    from: process.env.USERNAME, // Use USERNAME for the sender's email address
-    to: email,
-    subject: 'Your OTP Code',
-    text: `Your OTP code is ${otp}`,
-  };
-
-  transporter.sendMail(mailOptions, (error, info) => {
-    if (error) {
-      console.error('Error sending OTP:', error);
-      callback(error);
-    } else {
-      console.log('OTP sent:', info.response);
-      callback(null, info.response);
-    }
-  });
-}
-
-/**
- * @swagger
- * /api/otp/send:
- *   post:
- *     summary: Generate and send an OTP to the specified email address
- *     tags:
- *       - OTP
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               email:
- *                 type: string
- *                 format: email
- *                 example: user@example.com
- *     responses:
- *       200:
- *         description: OTP sent successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: OTP sent successfully
- *       400:
- *         description: Bad request, email is required or invalid
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: Email is required or invalid
- *       500:
- *         description: Internal server error
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: Error sending OTP
- */
-app.post('/api/otp/send', async (req, res) => {
-  const { email } = req.body;
-
-  // Validate email
-  if (!email || !/\S+@\S+\.\S+/.test(email)) {
-    return res.status(400).json({ message: 'Email is required and must be valid' });
-  }
-
-  const otp = generateOTP();
-  
-  // Save OTP to the database
-  const newOTP = new Otps({ email, otp });
-  await newOTP.save();
-
-  // Send OTP and handle errors
-  sendOTP(email, otp, (error, response) => {
-    if (error) {
-      return res.status(500).json({ message: 'Error sending OTP' });
-    }
-    res.status(200).json({ message: 'OTP sent successfully' });
-  });
+app.get('/', (req, res) => {
+  const query = req.query;  // This will give you the query parameters from the URL
+  console.log(query);  // Logs the query parameters
+  res.send('Query parameters received');
+});
+app.get('/', (req, res) => {
+  const ip = req.ip;  // Get the client's IP address
+  const geo = geoip.lookup(ip);  // Use geoip to look up the location
+  console.log(geo);  // Logs geo information
+  res.send('Location lookup complete');
 });
 
-/**
- * @swagger
- * /api/otp/verify:
- *   post:
- *     summary: Verify OTP
- *     description: Verifies the provided OTP for the given email address.
- *     tags:
- *       - OTP
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               email:
- *                 type: string
- *                 format: email
- *                 example: user@example.com
- *               otp:
- *                 type: string
- *                 example: '123456'
- *     responses:
- *       200:
- *         description: OTP verification successful
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: OTP verification successful
- *       400:
- *         description: Invalid OTP
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: Invalid OTP
- *       500:
- *         description: Internal server error
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: Error verifying OTP
- */
-app.post('/api/otp/verify', async (req, res) => {
-  try {
-    const { email, otp } = req.body;
-    const existingOTP = await Otps.findOneAndDelete({ email, otp });
-
-    if (existingOTP) {
-      // OTP is valid
-      res.status(200).json({ message: 'OTP verification successful' });
-    } else {
-      // OTP is invalid
-      res.status(400).json({ message: 'Invalid OTP' });
-    }
-  } catch (error) {
-    console.error('Error verifying OTP:', error);
-    res.status(500).json({ message: 'Error verifying OTP' });
-  }
-});
-
-/**
- * @swagger
- * /api/auth/register:
- *   post:
- *     summary: Register a new user
- *     description: Creates a new user account.
- *     tags:
- *       - Authentication
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               username:
- *                 type: string
- *                 example: user123
- *               email:
- *                 type: string
- *                 example: user@example.com
- *               password:
- *                 type: string
- *                 example: password123
- *     responses:
- *       201:
- *         description: User registered successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: User registered successfully
- *       400:
- *         description: Bad Request
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: User already exists
- */
-app.post('/api/auth/register', async (req, res) => {
-  try {
-    const { username, email, password } = req.body;
-    let user = await UserAccount.findOne({ email });
-
-    if (user) {
-      return res.status(400).json({ message: 'User already exists' });
+// Route: Fetch geolocation data by IP
+app.get(
+  '/api/get-location',
+  query('ip').optional().isIP().withMessage('Invalid IP address'),
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ success: false, errors: errors.array() });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-    user = new UserAccount({ username, email, password: hashedPassword });
+    const ip = req.query.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    console.log("IP to lookup:", ip); // Debugging: Output the IP being used for lookup.
 
-    await user.save();
-    res.status(201).json({ message: 'User registered successfully' });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
+    try {
+      const userToken = process.env.IPINFO_API_TOKEN; // Get your IPInfo API token from environment variables
 
-/**
- * @swagger
- * /api/auth/login:
- *   post:
- *     summary: Login a user
- *     description: Authenticates a user and returns a JWT token.
- *     tags:
- *       - Authentication
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               email:
- *                 type: string
- *                 example: user@example.com
- *               password:
- *                 type: string
- *                 example: password123
- *     responses:
- *       200:
- *         description: User logged in successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 token:
- *                   type: string
- *                   example: jwt_token_here
- *       401:
- *         description: Unauthorized
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: Invalid credentials
- */
-app.post('/api/auth/login', async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    const user = await UserAccount.findOne({ email });
-
-    if (!user || !(await bcrypt.compare(password, user.password))) {
-      return res.status(401).json({ message: 'Invalid credentials' });
-    }
-
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: '1d',
-    });
-
-    res.status(200).json({ token });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
-
-/**
- * @swagger
- * /api/auth/forgot-password:
- *   post:
- *     summary: Request a password reset link
- *     description: Sends an email with a password reset link containing a time-limited token.
- *     tags:
- *       - Authentication
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               email:
- *                 type: string
- *                 example: user@example.com
- *     responses:
- *       200:
- *         description: Password reset email sent successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 Status:
- *                   type: string
- *                   example: Success
- *                 info:
- *                   type: object
- *       404:
- *         description: User does not exist
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 Status:
- *                   type: string
- *                   example: User does not exist
- *       500:
- *         description: Internal server error
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 Status:
- *                   type: string
- *                   example: Error
- *                 message:
- *                   type: string
- */
-app.post('/api/auth/forgot-password', async (req, res) => {
-  try {
-    const { email } = req.body;
-
-    // Find the user by their email
-    const user = await UserAccount.findOne({ email });
-
-    if (!user) {
-      return res.status(404).json({ Status: "User does not exist" });
-    }
-
-    // Generate a token for password reset
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: "1d",
-    });
-
-    // Create a password reset link
-    const front = process.env.FRONT_URL;
-    const resetLink = `${front}/reset-password?token=${token}`;
-
-    // Send the password reset email
-    const mailOptions = {
-      from: process.env.USERNAME, // Use USERNAME for the sender's email address
-      to: email,
-      subject: 'Password Reset Request',
-      text: `You requested a password reset. Click the following link to reset your password: ${resetLink}`,
-    };
-
-    transporter.sendMail(mailOptions, (error, info) => {
-      if (error) {
-        console.error('Error sending email:', error);
-        return res.status(500).json({ Status: "Error", message: "Failed to send email" });
+      if (!userToken) {
+        return res.status(404).json({ success: false, message: 'IPInfo token not found.' });
       }
 
-      res.status(200).json({ Status: "Success", info });
+      // Fetch geolocation data using IPInfo API
+      const response = await fetch(`https://ipinfo.io/${ip}/json?token=${userToken}`);
+      const data = await response.json();
+
+      // Check if the IPInfo response has valid location data
+      if (data.loc) {
+        const [latitude, longitude] = data.loc.split(',');
+
+        // Return enhanced location details
+        return res.json({
+          success: true,
+          ip,
+          hostname: data.hostname,
+          location: {
+            city: data.city,
+            region: data.region,
+            country: data.country,
+            latitude: parseFloat(latitude),
+            longitude: parseFloat(longitude),
+            postal: data.postal || 'Not Available',
+            timezone: data.timezone || 'Not Available',
+            continent: data.continent || 'Not Available',
+            country_code: data.country_code || 'Not Available',
+            country_flag: `https://ipapi.co/static/flags/${data.country.toLowerCase()}.png`,
+          },
+          org: data.org || 'Not Available',
+          is_anycast: data.is_anycast || false,
+          is_mobile: data.is_mobile || false,
+          is_anonymous: data.is_anonymous || false,
+          is_satellite: data.is_satellite || false,
+          asn: data.asn || 'Not Available',
+          company: data.company || 'Not Available',
+          privacy: {
+            vpn: data.privacy?.vpn || false,
+            proxy: data.privacy?.proxy || false,
+            tor: data.privacy?.tor || false,
+            relay: data.privacy?.relay || false,
+            hosting: data.privacy?.hosting || false,
+          },
+          abuse: data.abuse || 'Not Available',
+        });
+      } else {
+        return res.status(404).json({
+          success: false,
+          message: `Location data not found for IP: ${ip}`,
+        });
+      }
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error. Unable to fetch location data.',
+      });
+    }
+  }
+);
+// Function to convert degrees to radians
+function toRadians(degrees) {
+  return degrees * (Math.PI / 180);
+}
+
+// Function to calculate the bearing between two points
+function calculateBearing(lat1, lon1, lat2, lon2) {
+  const lat1Rad = toRadians(lat1);
+  const lat2Rad = toRadians(lat2);
+  const deltaLon = toRadians(lon2 - lon1);
+
+  const y = Math.sin(deltaLon) * Math.cos(lat2Rad);
+  const x = Math.cos(lat1Rad) * Math.sin(lat2Rad) - Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(deltaLon);
+
+  let bearing = Math.atan2(y, x);
+  bearing = (bearing * 180) / Math.PI; // Convert from radians to degrees
+  bearing = (bearing + 360) % 360; // Normalize to 0-360 degrees
+
+  return bearing;
+}
+
+// Route: Calculate distance between two locations
+app.get(
+'/api/calculate-distance',
+[
+    query('lat1').isFloat({ min: -90, max: 90 }).withMessage('Invalid latitude 1'),
+    query('lon1').isFloat({ min: -180, max: 180 }).withMessage('Invalid longitude 1'),
+    query('lat2').isFloat({ min: -90, max: 90 }).withMessage('Invalid latitude 2'),
+    query('lon2').isFloat({ min: -180, max: 180 }).withMessage('Invalid longitude 2'),
+],
+(req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ success: false, errors: errors.array() });
+    }
+
+    const { lat1, lon1, lat2, lon2 } = req.query;
+
+    try {
+        // Parse the coordinates
+        const point1 = { latitude: parseFloat(lat1), longitude: parseFloat(lon1) };
+        const point2 = { latitude: parseFloat(lat2), longitude: parseFloat(lon2) };
+
+        // Calculate the distance using the Haversine formula or any other method you prefer
+        const distanceInMeters = getDistance(point1, point2);
+
+        // Convert meters to other units
+        const distanceInKilometers = distanceInMeters / 1000;
+        const distanceInMiles = distanceInMeters / 1609.34;
+        const distanceInNauticalMiles = distanceInMeters / 1852;
+
+        // Calculate the midpoint using getCenter
+        const midpoint = getCenter([point1, point2]);
+
+        // Calculate the bearing between the two points (initial compass bearing)
+        const bearing = calculateBearing(parseFloat(lat1), parseFloat(lon1), parseFloat(lat2), parseFloat(lon2));
+
+        console.log(`Distance calculated: ${distanceInMeters} meters`); // Info log
+
+        // Response JSON with detailed information
+        res.json({
+            success: true,
+            distance: {
+                meters: distanceInMeters,
+                kilometers: distanceInKilometers.toFixed(2),
+                miles: distanceInMiles.toFixed(2),
+                nautical_miles: distanceInNauticalMiles.toFixed(2)
+            },
+            midpoint: {
+                latitude: midpoint.latitude,
+                longitude: midpoint.longitude
+            },
+            bearing: bearing.toFixed(2), // Return bearing in degrees
+            details: {
+                origin: point1,
+                destination: point2,
+                message: 'Distance calculation successful using Haversine formula',
+            }
+        });
+    } catch (error) {
+        console.error(`Error calculating distance: ${error.message}`); // Error log
+        res.status(500).json({ success: false, message: 'Internal server error.' });
+    }
+}
+);
+
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  console.log('Authorization Header:', authHeader); // Log the authorization header
+
+  if (!authHeader) {
+    console.log('No authorization header found');
+    return res.status(401).json({ error: 'No token provided' });
+  }
+
+  const token = authHeader.split(' ')[1];
+  console.log('Extracted Token:', token); // Log the extracted token
+
+  if (token == null) {
+    console.log('Token is null');
+    return res.status(401).json({ error: 'No token provided' });
+  }
+
+  jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, user) => {
+    if (err) {
+      console.error('Token verification error:', err); // Log the verification error
+      return res.status(403).json({ error: 'Forbidden: Invalid token' });
+    }
+
+    req.user = user; // Attach the user object to the request
+    next();
+  });
+}
+
+module.exports = authenticateToken;
+
+app.post('/api/register', async (req, res) => {
+  try {
+    const { username, email, password } = req.body;
+ 
+    if (!username || !email || !password) {
+      return res.status(400).json({ error: 'Username, email, and password are required' });
+    }
+
+    const existingEmail = await User.findOne({ email });
+    if (existingEmail) {
+      return res.status(400).json({ error: 'Email already in use' });
+    }
+
+    const existingUsername = await User.findOne({ username });
+    if (existingUsername) {
+      return res.status(400).json({ error: 'Username already in use' });
+    }
+
+    const user = new User({ username, email, password });
+    await user.save();
+
+    // Return the user's ID and token to the client
+    const token = user.generateAuthToken();
+    const refreshToken = new RefreshToken({
+      token,
+      userId: user._id
+    });
+
+    await refreshToken.save();
+
+    res.status(201).json({ 
+      message: 'User registered successfully', 
+      userId: user._id,  // Pass the unique user ID
+      token 
     });
   } catch (error) {
-    res.status(500).json({ Status: "Error", message: error.message });
+    console.error('Error registering user:', error);
+    res.status(500).json({ error: 'Error registering user' });
   }
 });
 
-/**
- * @swagger
- * /api/auth/reset-password:
- *   post:
- *     summary: Reset user password
- *     description: Resets the user's password with a valid token and new password. Ensures token validity and password strength.
- *     tags:
- *       - Authentication
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               token:
- *                 type: string
- *                 example: jwt_reset_token_here
- *               newPassword:
- *                 type: string
- *                 example: newpassword123
- *                 minLength: 8
- *                 pattern: "^(?=.*[a-zA-Z])(?=.*[0-9]).{8,}$"
- *     responses:
- *       200:
- *         description: Password reset successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: Password reset successfully
- *       400:
- *         description: Bad Request
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: Invalid or expired token
- *       404:
- *         description: User not found
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: User not found
- *       500:
- *         description: Internal server error
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: Error resetting password
- */
-app.post('/api/auth/reset-password', async (req, res) => {
+async function someFunction() {
   try {
-    const { token, newPassword } = req.body;
+      const result = await someAsyncOperation();  
+  } catch (error) {
+      console.error('An error occurred:', error);
+  }
+} 
+// Login endpoint
+app.post('/api/login', async (req, res) => { 
+  const { usernameOrEmail, password } = req.body;
 
-    // Validate request
-    if (!token || !newPassword) {
-      return res.status(400).json({ message: 'Token and new password are required' });
+  // Validate inputs
+  if (!usernameOrEmail || !password) {
+    return res.status(STATUS_CODES.BAD_REQUEST).json({ error: ERROR_MESSAGES.MISSING_CREDENTIALS });
+  }
+
+  try {
+    // Log request body only in development (avoid logging sensitive data in production)
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Request body:', req.body);
     }
 
-    // Validate password strength
-    if (newPassword.length < 8 || !/[0-9]/.test(newPassword) || !/[a-zA-Z]/.test(newPassword)) {
-      return res.status(400).json({ message: 'Password must be at least 8 characters long and contain both letters and numbers' });
+    // Find user by email or username
+    const user = await User.findOne({
+      $or: [{ email: usernameOrEmail }, { username: usernameOrEmail }],
+    });
+
+    // Check if user exists and if the password matches
+    if (!user || !(await user.comparePassword(password))) {
+      return res.status(STATUS_CODES.BAD_REQUEST).json({ error: ERROR_MESSAGES.INVALID_CREDENTIALS });
     }
 
-    // Verify the token
-    let decoded;
-    try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
-    } catch (err) {
-      return res.status(400).json({ message: 'Invalid or expired token' });
-    }
+    // Generate JWT access token
+    const accessToken = jwt.sign(
+      { userId: user._id },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.ACCESS_TOKEN_EXPIRES || '15m' } // Default to 15 minutes
+    );
 
-    // Find the user by ID from the token
-    const user = await UserAccount.findById(decoded.id);
+    // Generate JWT refresh token
+    const refreshToken = jwt.sign(
+      { userId: user._id },
+      process.env.REFRESH_TOKEN_SECRET,
+      { expiresIn: process.env.REFRESH_TOKEN_EXPIRES || '7d' } // Default to 7 days
+    );
 
+    // Store refresh token in the database
+    await RefreshToken.create({ token: refreshToken, userId: user._id });
+
+    // Respond with tokens and userId
+    return res.status(STATUS_CODES.OK).json({ accessToken, refreshToken, userId: user._id });
+
+  } catch (error) {
+    // Log error for debugging (but avoid exposing sensitive information)
+    console.error('Error logging in:', error.message);
+
+    // Respond with a generic error message
+    return res.status(STATUS_CODES.INTERNAL_SERVER_ERROR).json({ error: ERROR_MESSAGES.INTERNAL_ERROR });
+  }
+}); 
+
+app.post('/api/endpoint', (req, res) => {
+  console.log('Request received:', req.body);
+  res.send({ message: 'Success' });
+});
+
+
+// Correct order: Initialize before use
+const changePasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // limit to 5 requests per windowMs
+  message: "Too many password change attempts, please try again later."
+});
+// Apply rate limiting middleware to the change-password route
+app.post('/api/change-password', changePasswordLimiter, async (req, res) => {
+  const { userId, currentPassword, newPassword, confirmPassword } = req.body;
+
+  // Validate that newPassword and confirmPassword match
+  if (newPassword !== confirmPassword) {
+    return res.status(400).json({
+      success: false,
+      message: 'New password and confirm password do not match.',
+    });
+  }
+
+  // Additional password validation: Minimum 8 characters, at least one number, one letter, one special character
+  const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+  if (!passwordRegex.test(newPassword)) {
+    return res.status(400).json({
+      success: false,
+      message: 'New password must be at least 8 characters long, contain at least one letter, one number, and one special character.',
+    });
+  }
+
+  try {
+    // Find the user in the database
+    const user = await User.findById(userId);
     if (!user) {
-      return res.status(404).json({ message: 'User not found' });
+      return res.status(404).json({
+        success: false,
+        message: 'User not found.',
+      });
     }
 
-    // Hash the new password and update the user's password
+    // Check if the current password matches the stored password
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch) {
+      return res.status(400).json({
+        success: false,
+        message: 'Current password is incorrect.',
+      });
+    }
+
+    // Hash the new password
     const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Update the user's password in the database
     user.password = hashedPassword;
     await user.save();
 
-    res.status(200).json({ message: 'Password reset successfully' });
+    // Log success (optional)
+    logSuccess(`User ${userId} changed password successfully`);
+
+    // Respond with a success message
+    res.status(200).json({
+      success: true,
+      message: 'Password updated successfully.',
+    });
   } catch (error) {
-    res.status(500).json({ message: 'Error resetting password' });
+    // Log error (optional)
+    logError(`Error updating password for user ${userId}: ${error.message}`);
+
+    // Handle errors
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error.',
+      details: error.message,
+    });
+  }
+});app.get('/api/me', async (req, res) => {
+  // Get token from the Authorization header
+  const token = req.headers['authorization']?.split(' ')[1];
+
+  // Check if token is provided
+  if (!token) {
+    return res.status(STATUS_CODES.UNAUTHORIZED).json({ error: ERROR_MESSAGES.ACCESS_TOKEN_REQUIRED });
+  }
+
+  try {
+    // Verify the token using the secret stored in .env
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    // Find the user by ID, excluding the password field
+    const user = await User.findById(decoded.userId).select('-password');
+
+    // Check if user exists
+    if (!user) {
+      return res.status(STATUS_CODES.NOT_FOUND).json({ error: ERROR_MESSAGES.USER_NOT_FOUND });
+    }
+
+    // Log user activity (e.g., to track who accessed the 'me' endpoint and when)
+    await logUserActivity(decoded.userId, 'Accessed /api/me endpoint');
+
+    // Fetch additional details like login history, active sessions, or roles
+    const userDetails = {
+      user,
+      loginHistory: await getLoginHistory(decoded.userId), // Example: Fetch login history if applicable
+      activeSessions: await getActiveSessions(decoded.userId), // Example: Fetch active sessions if applicable
+      roles: user.roles || [], // Fetch user roles, assuming user object contains roles
+      lastLogin: user.lastLogin || null, // Assuming there's a `lastLogin` field
+      accountStatus: user.accountStatus || 'active', // Check the account status
+      metadata: {
+        tokenExpiration: decoded.exp, // Include token expiration time for user's awareness
+        issuedAt: decoded.iat, // Include when the token was issued
+      },
+    };
+
+    // Respond with the enhanced user details
+    return res.status(STATUS_CODES.OK).json({ userDetails });
+  } catch (error) {
+    console.error('Error retrieving user:', error.message);
+
+    // Handle token verification errors
+    if (error instanceof jwt.JsonWebTokenError) {
+      return res.status(STATUS_CODES.FORBIDDEN).json({ error: ERROR_MESSAGES.INVALID_TOKEN });
+    } 
+    else if (error instanceof jwt.TokenExpiredError) {
+      return res.status(STATUS_CODES.FORBIDDEN).json({ error: ERROR_MESSAGES.TOKEN_EXPIRED });
+    }
+
+    // For any other errors, respond with a generic message
+    return res.status(STATUS_CODES.INTERNAL_SERVER_ERROR).json({ error: ERROR_MESSAGES.INTERNAL_ERROR });
   }
 });
-async function setupModel(port) {
+
+// Helper function to log user activity
+async function logUserActivity(userId, activity) {
   try {
-    console.log('Downloading llamafile.exe...');
-    await downloadFile('https://github.com/Mozilla-Ocho/llamafile/releases/download/0.6/llamafile-0.6', 'llamafile.exe');
-
-    console.log('Downloading tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf...');
-    await downloadFile('https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf', 'tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf');
-
-    console.log('Starting llamafile.exe server...');
-    // Command to run the AI server
-    const command = `./llamafile.exe -m tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf --nobrowser --port ${port}`;
-    console.log(`Executing command: ${command}`);
-
-    // Use exec to run the AI server asynchronously
-    exec(command, (error, stdout, stderr) => {
-      if (error) {
-        console.error(`Error starting AI server: ${error.message}`);
-        return;
-      }
-      if (stderr) {
-        console.error(`stderr: ${stderr}`);
-        return;
-      }
-      console.log(`stdout: ${stdout}`);
-      console.log("AI server started successfully on port " + port);
+    const logEntry = new ActivityLog({
+      userId,
+      activity,
+      timestamp: new Date(),
     });
-
+    await logEntry.save();
   } catch (error) {
-    console.error('An error occurred during setup:', error);
+    console.error('Error logging user activity:', error.message);
   }
 }
+app.post('/api/logout', authenticateToken, async (req, res) => {
+  const { refreshToken } = req.body;
+
+  // Check if refreshToken is provided
+  if (!refreshToken) {
+    return res.status(STATUS_CODES.BAD_REQUEST).json({ error: 'Refresh token is required' });
+  }
+
+  try {
+    // Find the refresh token in the database
+    const tokenRecord = await RefreshToken.findOne({ token: refreshToken });
+
+    if (!tokenRecord) {
+      return res.status(STATUS_CODES.NOT_FOUND).json({ error: 'Refresh token not found' });
+    }
+
+    // Delete the refresh token from the database
+    await RefreshToken.deleteOne({ token: refreshToken });
+
+    res.status(STATUS_CODES.OK).json({ message: 'User logged out successfully' });
+
+  } catch (error) {
+    console.error('Error logging out:', error);
+    res.status(STATUS_CODES.INTERNAL_SERVER_ERROR).json({ error: 'Error logging out' });
+  }
+});
 
 // Helper function to download files
 async function downloadFile(url, outputPath) {
@@ -603,16 +640,93 @@ async function downloadFile(url, outputPath) {
     writer.on('error', reject);
   });
 }
-// API for Chat interaction with the chatbot
-// Function to handle API responses
-async function handleLlamaRequest(req, res, responseFunction) {
-  const { instruction } = req.body;
 
-  if (!instruction) {
-    return res.status(400).json({ error: 'Instruction is required' });
-  }
-
+// Function to start the AI server
+async function setupModel(port) {
   try {
+    console.log('Downloading llamafile.exe...');
+    await downloadFile('https://github.com/Mozilla-Ocho/llamafile/releases/download/0.6/llamafile-0.6', 'llamafile.exe');
+
+    console.log('Downloading tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf...');
+    await downloadFile('https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf', 'tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf');
+
+    console.log('Starting llamafile.exe server...');
+    const command = `./llamafile.exe -m tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf --nobrowser --port ${port}`;
+    console.log(`Executing command: ${command}`);
+
+    exec(command, (error, stdout, stderr) => {
+      if (error) {
+        console.error(`Error starting AI server: ${error.message}`);
+        return;
+      }
+      if (stderr) {
+        console.error(`stderr: ${stderr}`);
+        return;
+      }
+      console.log(`stdout: ${stdout}`);
+      console.log("AI server started successfully on port " + port);
+    });
+  } catch (error) {
+    console.error('An error occurred during setup:', error);
+    throw error; // Throw error to be caught by the main server
+  }
+}
+
+// Function to wait for the AI server to be ready (with retries)
+const waitForServer = async (url, retries = 5, delayMs = 2000) => {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      await axios.get(url);
+      console.log(`AI server is ready at ${url}`);
+      return; // Server is up, exit the function
+    } catch (error) {
+      if (attempt < retries) {
+        console.log(`AI server not ready, retrying... (${attempt}/${retries})`);
+        await new Promise(resolve => setTimeout(resolve, delayMs)); // Wait before retrying
+      } else {
+        console.error(`AI server not ready after ${retries} attempts`);
+        throw new Error('AI server is not ready');
+      }
+    }
+  }
+};
+
+// Ensure Express JSON middleware is enabled
+app.use(express.json());
+
+// Swagger UI setup
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+
+// Start the main server
+app.listen(3000, async () => {
+  try {
+    console.log(`Main server is running on port 3000`);
+
+    // Set up the AI model asynchronously and ensure it's done before processing requests
+    await setupModel(4000);  // Start the AI model on port 4000
+
+    // Wait for the AI model server to be ready before processing requests
+    await waitForServer('http://localhost:4000', 5, 2000);  // 5 retries, 2 seconds delay between each
+
+    console.log('AI model setup completed successfully!');
+  } catch (error) {
+    console.error('Error setting up AI model:', error);
+    process.exit(1); // Exit the server if model setup fails
+  }
+});
+
+// Function to handle API responses (this can be adjusted based on your API logic)
+async function handleLlamaRequest(req, res, responseFunction) {
+  try {
+    if (!req.body || typeof req.body !== 'object') {
+      return res.status(400).json({ error: 'Invalid request body' });
+    }
+
+    const { instruction } = req.body;
+    if (!instruction) {
+      return res.status(400).json({ error: 'Instruction is required' });
+    }
+
     console.log(`Received instruction: ${instruction}`);
     const response = await responseFunction(instruction);
     res.status(200).json({ response });
@@ -620,28 +734,4 @@ async function handleLlamaRequest(req, res, responseFunction) {
     console.error('Error processing request:', error);
     res.status(500).json({ error: 'An error occurred while processing the request' });
   }
-}
-
-// API for Chat interaction with the chatbot
-app.post('/chat', async (req, res) => {
-  await handleLlamaRequest(req, res, generalLlama);
-});
-
-// API for Chatbot responses
-app.post('/chatbot', async (req, res) => {
-  await handleLlamaRequest(req, res, generateChatbotResponse);
-});
-
-// API for Completions/Translations
-app.post('/api/completions', async (req, res) => {
-  await handleLlamaRequest(req, res, generateCompletion);
-});
-// Swagger UI setup
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
-
-// Start the main server
-app.listen(port, async () => {
-  console.log(`Main server is running on port ${port}`);
-  // Set up the AI model after the main server starts
-  await setupModel(4000); // Assuming the AI model is running on port 4000
-});
+}   

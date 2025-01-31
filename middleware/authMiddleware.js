@@ -1,19 +1,37 @@
 const jwt = require('jsonwebtoken');
+require('dotenv').config();  // Ensure this is at the top of your entry file
 
-const authMiddleware = (req, res, next) => {
-  const token = req.header('Authorization')?.split(' ')[1];
-  
+exports.protect = (req, res, next) => {
+  // Extract token from Authorization header
+  const token = req.headers.authorization?.split(' ')[1];
+
+  // If no token is provided, respond with an error
   if (!token) {
-    return res.status(401).json({ message: 'Access denied. No token provided.' });
+    return res.status(401).json({ success: false, message: 'Unauthorized - No token provided' });
   }
+
+  console.log('Incoming Token:', token); // Log the token to ensure it's being sent correctly
 
   try {
+    // Verify the token using the secret from .env
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded;
-    next();
+
+    console.log('Decoded Token:', decoded); // Log the decoded token for debugging
+
+    req.user = decoded; // Attach the decoded information to the request object
+    next(); // Pass the control to the next middleware or route handler
   } catch (error) {
-    res.status(400).json({ message: 'Invalid token' });
+    // Log the error for debugging purposes
+    console.error('JWT Verification Error:', error);
+
+    // Handle different types of JWT verification errors
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({ success: false, message: 'Token expired' });
+    } else if (error.name === 'JsonWebTokenError') {
+      return res.status(401).json({ success: false, message: 'Invalid token' });
+    }
+
+    // General error response
+    return res.status(401).json({ success: false, message: 'Unauthorized - Token verification failed' });
   }
 };
-
-module.exports = authMiddleware;

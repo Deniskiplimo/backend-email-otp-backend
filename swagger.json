@@ -6,7 +6,7 @@
     "description": "API for user registration, login, password reset, and OTP verification"
   },
   "host": "localhost:3000",
-  "basePath": "/api",
+
   "tags": [
     {
       "name": "Authentication",
@@ -18,32 +18,286 @@
     }
   ],
   "paths": {
-    "/auth/register": {
-      "post": {
-        "tags": ["Authentication"],
-        "summary": "Register a new user",
-        "description": "Creates a new user account",
+    "/api/get-location": {
+      "get": {
+        "tags": ["User"],
+        "summary": "Get geolocation of an IP address",
         "parameters": [
           {
-            "name": "body",
-            "in": "body",
-            "required": true,
+            "name": "ip",
+            "in": "query",
+            "description": "IP address to lookup (optional)",
+            "required": false,
             "schema": {
-              "$ref": "#/definitions/User"
+              "type": "string",
+              "format": "ip"
             }
           }
         ],
         "responses": {
-          "201": {
-            "description": "User registered successfully"
+          "200": {
+            "description": "Successful response with location data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "ip": {
+                      "type": "string"
+                    },
+                    "hostname": {
+                      "type": "string"
+                    },
+                    "location": {
+                      "type": "object",
+                      "properties": {
+                        "city": { "type": "string" },
+                        "region": { "type": "string" },
+                        "country": { "type": "string" },
+                        "latitude": { "type": "number" },
+                        "longitude": { "type": "number" },
+                        "postal": { "type": "string" },
+                        "timezone": { "type": "string" },
+                        "continent": { "type": "string" },
+                        "country_code": { "type": "string" },
+                        "country_flag": { "type": "string" }
+                      }
+                    },
+                    "org": { "type": "string" },
+                    "is_anycast": { "type": "boolean" },
+                    "is_mobile": { "type": "boolean" },
+                    "is_anonymous": { "type": "boolean" },
+                    "is_satellite": { "type": "boolean" },
+                    "asn": { "type": "string" },
+                    "company": { "type": "string" },
+                    "privacy": {
+                      "type": "object",
+                      "properties": {
+                        "vpn": { "type": "boolean" },
+                        "proxy": { "type": "boolean" },
+                        "tor": { "type": "boolean" },
+                        "relay": { "type": "boolean" },
+                        "hosting": { "type": "boolean" }
+                      }
+                    },
+                    "abuse": { "type": "string" }
+                  }
+                }
+              }
+            }
           },
           "400": {
-            "description": "User already exists"
+            "description": "Invalid IP address"
+          },
+          "404": {
+            "description": "Location data not found for IP"
+          },
+          "500": {
+            "description": "Internal server error"
           }
         }
       }
-    },  
-    "/chat": {
+    },
+    "/api/calculate-distance": {
+      "get": {
+        "tags": ["User"],
+        "summary": "Calculate the distance between two geographic points",
+        "parameters": [
+          {
+            "name": "lat1",
+            "in": "query",
+            "description": "Latitude of the first point",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "format": "float"
+            }
+          },
+          {
+            "name": "lon1",
+            "in": "query",
+            "description": "Longitude of the first point",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "format": "float"
+            }
+          },
+          {
+            "name": "lat2",
+            "in": "query",
+            "description": "Latitude of the second point",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "format": "float"
+            }
+          },
+          {
+            "name": "lon2",
+            "in": "query",
+            "description": "Longitude of the second point",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "format": "float"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Distance calculation and other details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "distance": {
+                      "type": "object",
+                      "properties": {
+                        "meters": { "type": "number" },
+                        "kilometers": { "type": "number" },
+                        "miles": { "type": "number" },
+                        "nautical_miles": { "type": "number" }
+                      }
+                    },
+                    "midpoint": {
+                      "type": "object",
+                      "properties": {
+                        "latitude": { "type": "number" },
+                        "longitude": { "type": "number" }
+                      }
+                    },
+                    "bearing": { "type": "number" },
+                    "details": {
+                      "type": "object",
+                      "properties": {
+                        "origin": { "type": "object", "properties": { "latitude": { "type": "number" }, "longitude": { "type": "number" } } },
+                        "destination": { "type": "object", "properties": { "latitude": { "type": "number" }, "longitude": { "type": "number" } } },
+                        "message": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid coordinates"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/api/register": {
+      "post": {
+        "summary": "Register a new user",
+        "tags": ["User"],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "username": { "type": "string", "description": "User's username" },
+                "email": { "type": "string", "description": "User's email" },
+                "password": { "type": "string", "description": "User's password" }
+              },
+              "required": ["username", "email", "password" ],
+              "example": {
+                "username": "johndoe2",
+                "email": "johndoe2@example.com",
+                "password": "mysecurepassword"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "201": { "description": "User registered successfully" },
+          "400": { "description": "Bad request" },
+          "500": { "description": "Internal server error" }
+        }
+      }
+    },
+    "/api/login": {
+      "post": {
+        "summary": "Login a user",
+        "tags": ["User"],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "usernameOrEmail": { "type": "string", "description": "Username or email" },
+                "password": { "type": "string", "description": "Password" }
+              },
+              "required": ["usernameOrEmail", "password"],
+              "example": {
+                "usernameOrEmail": "johndoe2",
+                "password": "mysecurepassword"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Login successful" },
+          "400": { "description": "Bad request" },
+          "401": { "description": "Unauthorized" },
+          "500": { "description": "Internal server error" }
+        }
+      }
+    }
+  ,
+    "/api/me": {
+      "get": {
+        "summary": "Get logged-in user info",
+        "tags": ["User"],
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": { "description": "User info retrieved" },
+          "401": { "description": "Access token required" },
+          "403": { "description": "Invalid or expired token" },
+          "404": { "description": "User not found" }
+        }
+      }
+    },
+    "/api/logout": {
+      "post": {
+        "summary": "Log out a user",
+        "tags": ["User"],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "refreshToken": { "type": "string", "description": "Refresh token" }
+              },
+              "required": ["refreshToken"]
+            }
+          }
+        ],
+        "responses": {
+          "200": { "description": "User logged out successfully" },
+          "400": { "description": "Refresh token is required or invalid" },
+          "500": { "description": "Error logging out" }
+        }
+      }
+    
+  },"/api/chat": {
       "post": {
         "tags": ["Llama"],
         "summary": "Chat interaction with the chatbot",
@@ -85,7 +339,7 @@
         }
       }
     },
-    "/chatbot": {
+    "/api/chatbot": {
       "post": {
         "tags": ["Llama"],
         "summary": "Get chatbot responses",
@@ -169,31 +423,7 @@
         }
       }
     },
-    "/auth/login": {
-      "post": {
-        "tags": ["Authentication"],
-        "summary": "Login a user",
-        "description": "Authenticates a user and returns a JWT token",
-        "parameters": [
-          {
-            "name": "body",
-            "in": "body",
-            "required": true,
-            "schema": {
-              "$ref": "#/definitions/Login"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "User logged in successfully"
-          },
-          "401": {
-            "description": "Unauthorized"
-          }
-        }
-      }
-    },
+
     "/auth/forgot-password": {
       "post": {
         "tags": ["Authentication"],
@@ -247,114 +477,273 @@
         }
       }
     },
-    "/otp/send": {
-      "post": {
-        "tags": ["OTP"],
-        "summary": "Generate and send an OTP to the specified email address",
-        "description": "Generates and sends an OTP to the provided email address.",
+    "/api/sendOTP": {
+      "get": {
+        "tags": ["otp"],
+        "summary": "Send OTP to email",
         "parameters": [
           {
-            "name": "body",
-            "in": "body",
+            "in": "query",
+            "name": "email",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/SendOtp"
+              "type": "string",
+              "description": "Email to send OTP to"
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "OTP sent successfully",
-            "schema": {
-              "type": "object",
-              "properties": {
-                "message": {
-                  "type": "string",
-                  "example": "OTP sent successfully"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request",
-            "schema": {
-              "type": "object",
-              "properties": {
-                "message": {
-                  "type": "string",
-                  "example": "Email is required or invalid"
-                }
-              }
-            }
+            "description": "OTP sent successfully"
           },
           "500": {
-            "description": "Internal server error",
-            "schema": {
-              "type": "object",
-              "properties": {
-                "message": {
-                  "type": "string",
-                  "example": "Error sending OTP"
-                }
-              }
-            }
+            "description": "Internal server error"
           }
         }
       }
     },
-    "/otp/verify": {
-      "post": {
-        "tags": ["OTP"],
-        "summary": "Verify an OTP for the specified email address",
-        "description": "Verifies the OTP provided for the given email address.",
+    "/api/verifyOTP": {
+      "get": {
+        "tags": ["otp"],
+        "summary": "Verify OTP",
         "parameters": [
           {
-            "name": "body",
-            "in": "body",
+            "in": "query",
+            "name": "email",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/VerifyOtp"
+              "type": "string",
+              "description": "Email to verify OTP for"
+            }
+          },
+          {
+            "in": "query",
+            "name": "otp",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "OTP to verify"
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "OTP verification successful",
-            "schema": {
-              "type": "object",
-              "properties": {
-                "message": {
-                  "type": "string",
-                  "example": "OTP verification successful"
-                }
-              }
-            }
+            "description": "OTP verification successful"
           },
           "400": {
-            "description": "Invalid OTP",
-            "schema": {
-              "type": "object",
-              "properties": {
-                "message": {
-                  "type": "string",
-                  "example": "Invalid OTP"
-                }
-              }
-            }
+            "description": "Invalid OTP"
           },
           "500": {
-            "description": "Internal server error",
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/api/sendResetLink": {
+      "get": {
+        "tags": ["otp"],
+        "summary": "Send password reset link to email",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "email",
+            "required": true,
             "schema": {
-              "type": "object",
-              "properties": {
-                "message": {
-                  "type": "string",
-                  "example": "Error verifying OTP"
-                }
+              "type": "string",
+              "description": "Email to send reset link to"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reset link sent successfully"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/api/resetPassword": {
+      "post": {
+        "tags": ["otp"],
+        "summary": "Reset password using the reset token",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetPasswordRequest"
               }
             }
           }
+        },
+        "responses": {
+          "200": {
+            "description": "Password has been reset successfully"
+          },
+          "400": {
+            "description": "Invalid or expired reset token, or passwords do not match"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
         }
+      }
+    },
+    "/api/feedback": {
+      "post": {
+        "tags": ["otp"],
+        "summary": "Send user feedback",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "description": "User's email address"
+                  },
+                  "message": {
+                    "type": "string",
+                    "description": "Feedback message"
+                  }
+                },
+                "required": ["email", "message"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Feedback sent successfully"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/api/sendEmailNotification": {
+      "post": {
+        "tags": ["otp"],
+        "summary": "Send an email notification",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendEmailRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Email sent successfully"
+          },
+          "400": {
+            "description": "Missing required fields or invalid data"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/api/reset-Password/{token}": {
+      "get": {
+        "tags": ["otp"],
+        "summary": "Route to serve the password reset form",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Password reset token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Password reset form rendered"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "SendOTPRequest": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Email to send OTP to"
+          }
+        },
+        "required": ["email"]
+      },
+      "VerifyOTPRequest": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Email to verify OTP for"
+          },
+          "otp": {
+            "type": "string",
+            "description": "OTP to verify"
+          }
+        },
+        "required": ["email", "otp"]
+      },
+      "ResetPasswordRequest": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "Reset token for password reset"
+          },
+          "newPassword": {
+            "type": "string",
+            "description": "New password to set"
+          },
+          "confirmPassword": {
+            "type": "string",
+            "description": "Confirmation of the new password"
+          }
+        },
+        "required": ["token", "newPassword", "confirmPassword"]
+      },
+      "SendEmailRequest": {
+        "type": "object",
+        "properties": {
+          "to": {
+            "type": "string",
+            "description": "Recipient email address"
+          },
+          "subject": {
+            "type": "string",
+            "description": "Subject of the email"
+          },
+          "html": {
+            "type": "string",
+            "description": "HTML content of the email"
+          },
+          "text": {
+            "type": "string",
+            "description": "Plain text content of the email"
+          }
+        },
+        "required": ["to", "subject", "html", "text"]
       }
     }
   },

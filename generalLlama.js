@@ -1,4 +1,5 @@
 const { llamacpp, streamText } = require("modelfusion");
+const axios = require("axios");
 
 async function generalLlama(instruction, port) {
     // Define a more neutral and safe system prompt to avoid controversial issues
@@ -6,6 +7,25 @@ async function generalLlama(instruction, port) {
     `You are an AI assistant designed to help with a wide range of topics. ` +
     `Please respond clearly and directly to all user instructions. ` +
     `Provide accurate and relevant information without being biased or offensive.`;
+
+    // Function to check if the model server is available
+    const checkServerAvailability = async (url, retries = 5, delayMs = 2000) => {
+        for (let attempt = 1; attempt <= retries; attempt++) {
+            try {
+                await axios.get(url);
+                console.log(`AI server is ready at ${url}`);
+                return true; // Server is up, exit the function
+            } catch (error) {
+                if (attempt < retries) {
+                    console.log(`AI server not ready, retrying... (${attempt}/${retries})`);
+                    await new Promise(resolve => setTimeout(resolve, delayMs)); // Wait before retrying
+                } else {
+                    console.error(`AI server not ready after ${retries} attempts`);
+                    return false; // Server is still not available after retries
+                }
+            }
+        }
+    };
 
     // Ensure the API setup is correct and points to the correct server and port
     const api = llamacpp.Api({
@@ -19,6 +39,15 @@ async function generalLlama(instruction, port) {
     console.log("Sending request to the model server...");
     console.log(`Instruction: ${instruction}`);
     console.log(`Server: http://localhost:${port}`);
+
+    // Ensure server is available before proceeding
+    const serverUrl = `http://localhost:${port}`;
+    const isServerReady = await checkServerAvailability(serverUrl);
+
+    if (!isServerReady) {
+        console.error(`Failed to connect to the AI server at ${serverUrl}`);
+        return;
+    }
 
     try {
         // Set up the model's completion generator

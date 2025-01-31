@@ -1,0 +1,20 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 14
+    },
+    "auditLog": "/home/denis/backend-email-otp-backend/utils/logs/.6b2d919606461578d2ee80d92b2912de714b02a0-audit.json",
+    "files": [
+        {
+            "date": 1738341948262,
+            "name": "/home/denis/backend-email-otp-backend/utils/logs/error-2025-01-31.log",
+            "hash": "6f6a6251471183689fb75b8f5a3a3a43ccafae17401594e8fdcc2a9554fbad28"
+        },
+        {
+            "date": 1738357216951,
+            "name": "/home/denis/backend-email-otp-backend/utils/logs/error-2025-02-01.log",
+            "hash": "5e1bf9f5a1fdcd9b18f69598ccaa1f7e269164ce9d53d3ae13e28e1eeddbefc2"
+        }
+    ],
+    "hashType": "sha256"
+}

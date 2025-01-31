@@ -9,4 +9,10 @@ router.post('/chat', chatbotController.getAIResponse);  // General AI response
 // Route specifically for chatbot interaction (non-programming)
 router.post('/chatbot', chatbotController.getChatbotResponse);
 
+// New route to refresh the AI model
+router.post('/refresh-model', chatbotController.refreshModel);  // Refresh model
+
+// New route to check server health
+router.get('/health', chatbotController.checkServerHealth);  // Health check
+
 module.exports = router;
