@@ -1,0 +1,20 @@
+# Ignore node_modules (installed dependencies)
+node_modules/
+  
+# Ignore AI model files
+*.gguf
+*.exe
+*.log
+
+# Ignore cache and build files
+.cache/
+.vscode/
+.DS_Store
+# Ignore compiled executables
+llamafile.exe
+
+# Ignore AI model files
+tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf
+
+# Ignore versioned dependency (if unnecessary)
+=0.17.1

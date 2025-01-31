@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const swaggerUi = require('swagger-ui-express');
-const swaggerDocument = require('./swagger/swagger.json');
+const swaggerDocument = require('./swagger.json');
 const bodyParser = require('body-parser');
 const nodemailer = require('nodemailer');
 const jwt = require('jsonwebtoken');
@@ -12,14 +12,16 @@ const crypto = require('crypto');
 const sendEmail = require('./utils/sendEmail');
 const randomstring = require('randomstring');
 const Otps = require('./models/otpModel');
-const { execSync } = require('child_process');
+const { exec } = require('child_process');
 const axios = require('axios');
-const fs = require('fs');
+const fs = require('fs'); 
 const app = express();
 const port = process.env.APP_PORT || 3000; // Use APP_PORT for the application server
-
+const aiRoutes = require('./routes/aiRoutes');
+const chatbotRoutes = require('./routes/chatbotRoutes');
 app.use(bodyParser.json());
-
+      // General AI routes
+app.use('/api', chatbotRoutes);
 // Connect to MongoDB
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('MongoDB connected'))
@@ -535,6 +537,39 @@ app.post('/api/auth/reset-password', async (req, res) => {
     res.status(500).json({ message: 'Error resetting password' });
   }
 });
+async function setupModel(port) {
+  try {
+    console.log('Downloading llamafile.exe...');
+    await downloadFile('https://github.com/Mozilla-Ocho/llamafile/releases/download/0.6/llamafile-0.6', 'llamafile.exe');
+
+    console.log('Downloading tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf...');
+    await downloadFile('https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf', 'tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf');
+
+    console.log('Starting llamafile.exe server...');
+    // Command to run the AI server
+    const command = `./llamafile.exe -m tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf --nobrowser --port ${port}`;
+    console.log(`Executing command: ${command}`);
+
+    // Use exec to run the AI server asynchronously
+    exec(command, (error, stdout, stderr) => {
+      if (error) {
+        console.error(`Error starting AI server: ${error.message}`);
+        return;
+      }
+      if (stderr) {
+        console.error(`stderr: ${stderr}`);
+        return;
+      }
+      console.log(`stdout: ${stdout}`);
+      console.log("AI server started successfully on port " + port);
+    });
+
+  } catch (error) {
+    console.error('An error occurred during setup:', error);
+  }
+}
+
+// Helper function to download files
 async function downloadFile(url, outputPath) {
   if (fs.existsSync(outputPath)) {
     console.log(`${outputPath} already exists. Skipping download.`);
@@ -545,7 +580,7 @@ async function downloadFile(url, outputPath) {
   const response = await axios({
     url,
     method: 'GET',
-    responseType: 'stream'
+    responseType: 'stream',
   });
 
   const totalLength = response.headers['content-length'];
@@ -562,32 +597,51 @@ async function downloadFile(url, outputPath) {
   return new Promise((resolve, reject) => {
     writer.on('finish', () => {
       console.log(`\nDownload of ${outputPath} completed.`);
+      fs.chmodSync(outputPath, '755');  // Add execute permissions
       resolve();
     });
     writer.on('error', reject);
   });
 }
+// API for Chat interaction with the chatbot
+// Function to handle API responses
+async function handleLlamaRequest(req, res, responseFunction) {
+  const { instruction } = req.body;
 
-async function setupModel(port) {
+  if (!instruction) {
+    return res.status(400).json({ error: 'Instruction is required' });
+  }
+
   try {
-    console.log('Downloading llamafile.exe...');
-    await downloadFile('https://github.com/Mozilla-Ocho/llamafile/releases/download/0.6/llamafile-0.6', 'llamafile.exe');
-
-    console.log('Downloading tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf...');
-    await downloadFile('https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf', 'tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf');
-
-    console.log('Starting llamafile.exe server...');
-    execSync(`llamafile.exe -m tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf --nobrowser --port ${port}`, { stdio: 'inherit' });
-
+    console.log(`Received instruction: ${instruction}`);
+    const response = await responseFunction(instruction);
+    res.status(200).json({ response });
   } catch (error) {
-    console.error('An error occurred:', error);
+    console.error('Error processing request:', error);
+    res.status(500).json({ error: 'An error occurred while processing the request' });
   }
 }
 
-setupModel(4000);
+// API for Chat interaction with the chatbot
+app.post('/chat', async (req, res) => {
+  await handleLlamaRequest(req, res, generalLlama);
+});
+
+// API for Chatbot responses
+app.post('/chatbot', async (req, res) => {
+  await handleLlamaRequest(req, res, generateChatbotResponse);
+});
+
+// API for Completions/Translations
+app.post('/api/completions', async (req, res) => {
+  await handleLlamaRequest(req, res, generateCompletion);
+});
 // Swagger UI setup
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
-app.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
+// Start the main server
+app.listen(port, async () => {
+  console.log(`Main server is running on port ${port}`);
+  // Set up the AI model after the main server starts
+  await setupModel(4000); // Assuming the AI model is running on port 4000
 });

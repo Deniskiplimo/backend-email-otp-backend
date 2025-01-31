@@ -42,6 +42,132 @@
           }
         }
       }
+    },  
+    "/chat": {
+      "post": {
+        "tags": ["Llama"],
+        "summary": "Chat interaction with the chatbot",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "instruction": {
+                  "type": "string",
+                  "example": "Hello, how are you?"
+                }
+              },
+              "required": ["instruction"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "response": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request - Missing instruction"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/chatbot": {
+      "post": {
+        "tags": ["Llama"],
+        "summary": "Get chatbot responses",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "instruction": {
+                  "type": "string",
+                  "example": "Tell me a joke."
+                }
+              },
+              "required": ["instruction"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "response": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request - Missing instruction"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/completions": {
+      "post": {
+        "tags": ["Llama"],
+        "summary": "Get text completions or translations",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "instruction": {
+                  "type": "string",
+                  "example": "Translate 'hello' to Spanish."
+                }
+              },
+              "required": ["instruction"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "response": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request - Missing instruction"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        }
+      }
     },
     "/auth/login": {
       "post": {
