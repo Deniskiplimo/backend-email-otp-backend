@@ -339,6 +339,193 @@
         }
       }
     },
+    "/api/refactor-code": {
+      "post": {
+        "summary": "Refactor programming code",
+        "tags": ["Llama"],
+        "operationId": "refactorCode",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "body",
+            "description": "The code to be refactored",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "string"
+
+            }
+          },
+          {
+            "name": "language",
+            "in": "body",
+            "description": "The programming language of the code",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+          
+        ],
+        "responses": {
+          "200": {
+            "description": "Refactored code",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "500": {
+            "description": "Error occurred"
+          }
+        }
+      }
+    },
+    "/api/optimize-code": {
+      "post": {
+        "summary": "Optimize programming code",
+        "tags": ["Llama"],
+        "operationId": "optimizeCode",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "body",
+            "description": "The code to be optimized",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "language",
+            "in": "body",
+            "description": "The programming language of the code",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+         
+        ],
+        "responses": {
+          "200": {
+            "description": "Optimized code",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "500": {
+            "description": "Error occurred"
+          }
+        }
+      }
+    },
+    "/api/generate": {
+      "post": {
+        "summary": "Generate unit tests for code",
+        "tags": ["Llama"],
+        "operationId": "generateUnitTests",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "body",
+            "description": "The code for which unit tests should be generated",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "language",
+            "in": "body",
+            "description": "The programming language of the code",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Generated unit tests",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "500": {
+            "description": "Error occurred"
+          }
+        }
+      }
+    },
+    "/api/generateunittest": {
+      "post": {
+        "summary": "Generate unit tests for code",
+        "tags": ["Llama"],
+        "operationId": "generateUnitTestsForCode",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "body",
+            "description": "The code for which unit tests should be generated",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "language",
+            "in": "body",
+            "description": "The programming language of the code",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Generated unit tests",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "500": {
+            "description": "Error occurred"
+          }
+        }
+      }
+    },
+    "/api/suggest-algorithm": {
+      "post": {
+        "summary": "Suggest algorithm for a problem",
+        "tags": ["Llama"],
+        "operationId": "suggestAlgorithm",
+        "parameters": [
+          {
+            "name": "problemDescription",
+            "in": "body",
+            "description": "The problem description for which an algorithm needs to be suggested",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+         
+        ],
+        "responses": {
+          "200": {
+            "description": "Suggested algorithm",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "500": {
+            "description": "Error occurred"
+          }
+        }
+      }
+    }
+,
     "/api/chatbot": {
       "post": {
         "tags": ["Llama"],

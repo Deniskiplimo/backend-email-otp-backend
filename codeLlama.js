@@ -1,56 +1,208 @@
 const { llamacpp, streamText } = require("modelfusion");
 
+// Function to generate code (existing)
 async function codeLlama(instruction, language, port) {
-    // Define a simpler and more neutral system prompt to avoid conflicts.
     const llamaSystemPrompt =
-    `You are an AI assistant here to help with programming tasks. ` +
-    `Your responses will be clear, concise, and code-oriented.` +
-    `Please follow the instructions and generate the requested code in the specified language.`;
+        `You are an AI assistant here to help with programming tasks. ` +
+        `Your responses will be clear, concise, and code-oriented. ` +
+        `Please follow the instructions and generate the requested code in the specified language.`;
 
-    // Ensure the API setup is correct and points to the right server
     const api = llamacpp.Api({
         baseUrl: {
-            host: "localhost",  // Adjust if the server is not on localhost
-            port: `${port}`,
+            host: "localhost",
+            port: Number(port),
         },
     });
 
-    // Log the initial state and input to help with debugging
-    console.log("Sending request to the model server...");
-    console.log(`Instruction: ${instruction}`);
-    console.log(`Language: ${language}`);
-    console.log(`Server: http://localhost:${port}`);
-
     try {
-        // Set up the model's completion generator with necessary parameters
+        const timeout = 5000;  
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
+
         const textStream = await streamText({
+            signal: controller.signal,
             model: llamacpp
                 .CompletionTextGenerator({
                     api: api, 
-                    promptTemplate: llamacpp.prompt.ChatML, 
-                    temperature: 0,  // Set temperature to 0 for deterministic output
-                    stopSequences: ["\n```"],  // Stop sequence for code blocks
+                    temperature: 0, 
+                    stopSequences: ["\n```"], 
                 })
                 .withInstructionPrompt(),
             prompt: {
-                system: llamaSystemPrompt,  // System prompt that defines model behavior
-                instruction: instruction,   // Instruction for the model to process
-                responsePrefix: `Here is the program in ${language}:\n\`\`\`${language}\n`, // Code block format
+                system: llamaSystemPrompt,
+                instruction: instruction,
+                responsePrefix: `Here is the program in ${language}:\n\`\`\`${language}\n`,
             },
         });
 
-        // Stream the model's response part by part and print it to the console
+        let response = "";
         for await (const textPart of textStream) {
-            process.stdout.write(textPart);  // Write to stdout (console)
+            process.stdout.write(textPart);
+            response += textPart;
         }
-        console.log("\nResponse completed.");
+
+        clearTimeout(timeoutId);
+        return response;
+
     } catch (error) {
-        // Catch and log any errors that occur during the process
-        console.error("Error occurred while generating code:", error);
+        console.error("❌ Error generating code:", error.message);
+        clearTimeout(timeoutId);
+        return "An error occurred while generating the response.";
     }
 }
 
-// Example usage:
-codeLlama("create a CNN model", "python", 4000)
-    .then(() => console.log("Request finished"))
-    .catch((error) => console.error("Request failed:", error));
+// Function to handle general chatbot responses
+async function generalChatbotResponse(prompt, port) {
+    const llamaSystemPrompt = "You are a helpful chatbot. Respond to the user's questions and requests in a friendly, informative manner.";
+
+    const api = llamacpp.Api({
+        baseUrl: {
+            host: "localhost",
+            port: Number(port),
+        },
+    });
+
+    try {
+        const timeout = 5000;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+        const textStream = await streamText({
+            signal: controller.signal,
+            model: llamacpp
+                .CompletionTextGenerator({
+                    api: api, 
+                    temperature: 0.7,  // Slightly higher for more creative answers
+                    stopSequences: ["\n"],
+                })
+                .withInstructionPrompt(),
+            prompt: {
+                system: llamaSystemPrompt,
+                instruction: prompt,
+                responsePrefix: "Chatbot: ",
+            },
+        });
+
+        let response = "";
+        for await (const textPart of textStream) {
+            process.stdout.write(textPart);
+            response += textPart;
+        }
+
+        clearTimeout(timeoutId);
+        return response;
+
+    } catch (error) {
+        console.error("❌ Error generating chatbot response:", error.message);
+        clearTimeout(timeoutId);
+        return "An error occurred while generating the response.";
+    }
+}
+
+// Function to explain code (new)
+async function explainCode(code, language, port) {
+    const llamaSystemPrompt =
+        `You are a helpful AI that explains code. ` +
+        `Please explain the following code in detail, line by line, to help the user understand how it works.`;
+
+    const api = llamacpp.Api({
+        baseUrl: {
+            host: "localhost",
+            port: Number(port),
+        },
+    });
+
+    try {
+        const timeout = 5000;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+        const textStream = await streamText({
+            signal: controller.signal,
+            model: llamacpp
+                .CompletionTextGenerator({
+                    api: api, 
+                    temperature: 0, 
+                    stopSequences: ["\n"],
+                })
+                .withInstructionPrompt(),
+            prompt: {
+                system: llamaSystemPrompt,
+                instruction: `Please explain the following code in ${language}:\n\`\`\`${language}\n${code}\n\`\`\``,
+                responsePrefix: "Explanation: ",
+            },
+        });
+
+        let response = "";
+        for await (const textPart of textStream) {
+            process.stdout.write(textPart);
+            response += textPart;
+        }
+
+        clearTimeout(timeoutId);
+        return response;
+
+    } catch (error) {
+        console.error("❌ Error explaining code:", error.message);
+        clearTimeout(timeoutId);
+        return "An error occurred while explaining the code.";
+    }
+}
+
+// Function to debug code (new)
+async function debugCode(code, language, port) {
+    const llamaSystemPrompt =
+        `You are an AI assistant specializing in debugging code. ` +
+        `Please identify any issues with the following code and suggest improvements or fixes.`;
+
+    const api = llamacpp.Api({
+        baseUrl: {
+            host: "localhost",
+            port: Number(port),
+        },
+    });
+
+    try {
+        const timeout = 5000;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+        const textStream = await streamText({
+            signal: controller.signal,
+            model: llamacpp
+                .CompletionTextGenerator({
+                    api: api, 
+                    temperature: 0, 
+                    stopSequences: ["\n"],
+                })
+                .withInstructionPrompt(),
+            prompt: {
+                system: llamaSystemPrompt,
+                instruction: `Please debug the following ${language} code:\n\`\`\`${language}\n${code}\n\`\`\``,
+                responsePrefix: "Debugging suggestion: ",
+            },
+        });
+
+        let response = "";
+        for await (const textPart of textStream) {
+            process.stdout.write(textPart);
+            response += textPart;
+        }
+
+        clearTimeout(timeoutId);
+        return response;
+
+    } catch (error) {
+        console.error("❌ Error debugging code:", error.message);
+        clearTimeout(timeoutId);
+        return "An error occurred while debugging the code.";
+    }
+}
+
+// Export the functions to be used elsewhere
+module.exports = {
+    codeLlama,
+    generalChatbotResponse,
+    explainCode,
+    debugCode,
+};
