@@ -268,32 +268,35 @@ exports.optimizeCode = async (code, language, port) => {
 
 // Algorithm Suggestion
 // Exported function to suggest an algorithm for a given problem
-exports.suggestAlgorithm = async (problemDescription, port) => {
+exports.suggestAlgorithm = async (problemDescription, port = 4000) => { 
     const llamaSystemPrompt =
         `You are an AI assistant specializing in algorithm design. ` +
         `Given a problem description, suggest an appropriate algorithm or approach to solve it.`;
 
+    // Ensure port is a valid number, defaulting to 4000 if invalid
+    const validPort = Number.isNaN(Number(port)) ? 4000 : Number(port);
+
     const api = llamacpp.Api({
         baseUrl: {
             host: "localhost",
-            port: Number(port),
+            port: validPort,
         },
     });
+
+    let timeoutId; // Declare timeoutId outside the try block
 
     try {
         const timeout = 5000;
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeout);
+        timeoutId = setTimeout(() => controller.abort(), timeout); // Assign timeoutId here
 
         const textStream = await streamText({
             signal: controller.signal,
-            model: llamacpp
-                .CompletionTextGenerator({
-                    api: api,
-                    temperature: 0,
-                    stopSequences: ["\n"],
-                })
-                .withInstructionPrompt(),
+            model: llamacpp.CompletionTextGenerator({
+                api: api,
+                temperature: 0,
+                stopSequences: ["\n"],
+            }).withInstructionPrompt(),
             prompt: {
                 system: llamaSystemPrompt,
                 instruction: `Suggest an algorithm or approach to solve the following problem:\n${problemDescription}`,
@@ -307,12 +310,12 @@ exports.suggestAlgorithm = async (problemDescription, port) => {
             response += textPart;
         }
 
-        clearTimeout(timeoutId);
+        clearTimeout(timeoutId); // Clear timeout here
         return response;
 
     } catch (error) {
         console.error("❌ Error suggesting algorithm:", error.message);
-        clearTimeout(timeoutId);
+        if (timeoutId) clearTimeout(timeoutId); // Clear timeout if it exists
         return "An error occurred while suggesting an algorithm.";
     }
 };
@@ -474,15 +477,18 @@ exports.generateChatbotResponse = async (req, res) => {
 };
 
 // Exported helper function to generate unit tests for code
-exports.generateUnitTestsForCode = async (code, language, port) => {
+exports.generateUnitTestsForCode = async (code, language, port = 4000) => {
     const llamaSystemPrompt =
         `You are an AI assistant specializing in generating unit tests. ` +
         `Given the following code, generate unit tests that ensure the correctness of the code.`;
 
+    // Ensure port is a valid number, defaulting to 4000 if invalid
+    const validPort = Number.isNaN(Number(port)) ? 4000 : Number(port);
+
     const api = llamacpp.Api({
         baseUrl: {
             host: "localhost",
-            port: Number(port),
+            port: validPort,
         },
     });
 
@@ -522,6 +528,7 @@ exports.generateUnitTestsForCode = async (code, language, port) => {
     }
 };
 
+
 // Exported controller function for handling chatbot generation request
 exports.generateUnitTestsForCode = async (code, language, port = 4000) => {
     const llamaSystemPrompt =
@@ -540,7 +547,12 @@ exports.generateUnitTestsForCode = async (code, language, port = 4000) => {
     try {
         const timeout = 5000;
         const controller = new AbortController();
-        timeoutId = setTimeout(() => controller.abort(), timeout); // Assign timeoutId
+        timeoutId = setTimeout(() => {
+            console.error("❌ Timeout: Request took too long, aborting...");
+            controller.abort();
+        }, timeout); // Assign timeoutId
+
+        console.log("✅ Requesting unit tests...");
 
         const textStream = await streamText({
             signal: controller.signal,
@@ -560,12 +572,14 @@ exports.generateUnitTestsForCode = async (code, language, port = 4000) => {
 
         let response = "";
         for await (const textPart of textStream) {
-            process.stdout.write(textPart);
+            if (!textPart) break; // Ensure it doesn't loop infinitely
+            console.log("📝 Received:", textPart);
             response += textPart;
         }
 
         clearTimeout(timeoutId);
-        return response;
+        console.log("✅ Response complete.");
+        return response || "No response received."; // Handle empty response case
 
     } catch (error) {
         console.error("❌ Error generating unit tests:", error.message);
