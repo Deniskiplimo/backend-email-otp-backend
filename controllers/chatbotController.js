@@ -3,25 +3,51 @@ const { generalLlama } = require('../generalLlama');
 const { llamacpp, streamText } = require("modelfusion");
 const axios = require('axios');
 
-// Default AI model server port (falling back to an environment variable if available)
-const DEFAULT_PORT = process.env.AI_SERVER_PORT || 4000; // Pick the port from environment or default to 4000
-
-// Function to fetch the running port dynamically (if required, from server config or environment)
-function getRunningPort() {
-    // If the server is already running and bound to a port, you can dynamically fetch it from the environment or a server config.
-    return process.env.AI_SERVER_PORT || DEFAULT_PORT; // Defaults to 4000 if not specified
+/**
+ * Validate if the given port number is within the valid range.
+ */
+function isValidPort(port) {
+    const portNumber = parseInt(port, 10);
+    return portNumber >= 1 && portNumber <= 65535;
 }
 
-// Function to fetch AI response from the server
+/**
+ * Logs incoming requests with method and URL.
+ */
+function logRequest(req, additionalData = {}) {
+    console.log(`[${new Date().toISOString()}] Request received`);
+    console.log(`Method: ${req.method}, URL: ${req.originalUrl}`);
+    if (Object.keys(additionalData).length > 0) {
+        console.log("Additional Data:", additionalData);
+    }
+}
+
+/**
+ * Determines if the given task is related to programming.
+ */
+function isProgrammingTask(task) {
+    const programmingKeywords = ['code', 'programming', 'development', 'script', 'algorithm'];
+    return programmingKeywords.some(keyword => task.toLowerCase().includes(keyword));
+}
+
+// Default AI model server port (fallback to environment variable if available)
+const DEFAULT_PORT = process.env.AI_SERVER_PORT || 4000;
+
+/**
+ * Get the running AI server port.
+ */
+function getRunningPort() {
+    return process.env.AI_SERVER_PORT || DEFAULT_PORT;
+}
+
+/**
+ * Fetch AI response from the local AI server.
+ */
 async function fetchAIResponseFromServer(instruction, language, port = getRunningPort()) {
-    const url = `http://127.0.0.1:${port}/`;  // AI server URL
+    const url = `http://127.0.0.1:${port}/`;  
 
     try {
-        const response = await axios.post(url, {
-            prompt: instruction,
-            language: language,
-            port: port
-        });
+        const response = await axios.post(url, { prompt: instruction, language, port });
         return response.data.response;
     } catch (error) {
         console.error('❌ Error fetching response from AI server:', error.message);
@@ -29,12 +55,14 @@ async function fetchAIResponseFromServer(instruction, language, port = getRunnin
     }
 }
 
-// Function to handle AI responses from the client
+/**
+ * Main API handler to process AI requests.
+ */
 exports.getAIResponse = async (req, res) => {
     let { prompt, instruction, language, port } = req.body;
 
     prompt = prompt || instruction;
-    port = Number(port) || getRunningPort();  // Pick the running port
+    port = Number(port) || getRunningPort();  
 
     if (!prompt || typeof prompt !== "string" || prompt.trim() === "") {
         return res.status(400).json({ error: 'Prompt is required and must be a non-empty string' });
@@ -44,21 +72,17 @@ exports.getAIResponse = async (req, res) => {
         return res.status(400).json({ error: 'Invalid port number' });
     }
 
-    logRequest('Received AI request', { prompt, language, port });
+    logRequest(req, { prompt, language, port });
 
     try {
         let response;
 
         if (isProgrammingTask(prompt)) {
-            language = language || "python"; // Default to Python if missing
-            logRequest('Programming request detected', { prompt, language });
-
-            // Handle programming-related tasks with importedCodeLlama
+            language = language || "python";  
+            console.log(`Detected programming request, using CodeLlama for ${language}.`);
             response = await importedCodeLlama(prompt, language, port);
         } else {
-            logRequest('General chatbot request detected', { prompt });
-
-            // Use generalLlama for non-programming related tasks
+            console.log("Detected general chatbot request, using GeneralLlama.");
             response = await generalLlama(prompt, port);
         }
 
@@ -74,42 +98,30 @@ exports.getAIResponse = async (req, res) => {
     }
 };
 
-// Function to interact with the AI model for programming-related tasks
+/**
+ * Handles AI-generated code responses using CodeLlama.
+ */
 async function codeLlama(instruction, language, port) {
-    const llamaSystemPrompt =
-        `You are an AI assistant here to help with programming tasks. ` +
-        `Your responses will be clear, concise, and code-oriented. ` +
-        `Please follow the instructions and generate the requested code in the specified language.`;
+    const llamaSystemPrompt = `You are an AI assistant for programming tasks. Generate code in the specified language.`;
 
-    const api = llamacpp.Api({
-        baseUrl: {
-            host: "localhost",
-            port: Number(port),
-        },
-    });
+    const api = llamacpp.Api({ baseUrl: `http://localhost:${port}` });
 
-    console.log("Sending request to the model server...");
-    console.log(`Instruction: ${instruction}`);
-    console.log(`Language: ${language}`);
-    console.log(`Server: http://localhost:${port}`);
+    console.log(`🔄 Sending request to model server (Port: ${port})...`);
+    console.log(`Instruction: ${instruction} | Language: ${language}`);
 
     try {
-        const timeout = 5000;  // Set a timeout for the request to prevent infinite loading
+        const timeout = 5000;
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeout);
 
         const textStream = await streamText({
-            signal: controller.signal,  // Attach abort controller signal for timeout
+            signal: controller.signal,
             model: llamacpp
-                .CompletionTextGenerator({
-                    api: api,
-                    temperature: 0,
-                    stopSequences: ["\n```"],
-                })
+                .CompletionTextGenerator({ api, temperature: 0, stopSequences: ["\n```"] })
                 .withInstructionPrompt(),
             prompt: {
                 system: llamaSystemPrompt,
-                instruction: instruction,
+                instruction,
                 responsePrefix: `Here is the program in ${language}:\n\`\`\`${language}\n`,
             },
         });
@@ -120,16 +132,16 @@ async function codeLlama(instruction, language, port) {
             response += textPart;
         }
 
-        console.log("\nResponse completed.");
-        clearTimeout(timeoutId);  // Cleanup timeout after request completion
+        clearTimeout(timeoutId);
+        console.log("\n✅ Response completed.");
         return response;
 
     } catch (error) {
         console.error("❌ Error generating code:", error.message);
-        clearTimeout(timeoutId);  // Cleanup timeout in case of an error
         return "An error occurred while generating the response.";
     }
 }
+
 /**
  * Summarizes text using the AI model.
  * @param {string} text - The text to summarize.
@@ -612,3 +624,4 @@ exports.generateUnitTests = async (req, res) => {
 
 
 
+  

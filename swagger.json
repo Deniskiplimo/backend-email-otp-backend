@@ -11,10 +11,6 @@
     {
       "name": "Authentication",
       "description": "API for user registration, login, and password reset"
-    },
-    {
-      "name": "OTP",
-      "description": "API for sending OTPs and verifying OTPs"
     }
   ],
   "paths": {

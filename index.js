@@ -2,9 +2,9 @@ require('dotenv').config();
 const ip = '8.8.8.8';
 const { query, validationResult } = require('express-validator');
 const authenticateRefreshToken = require('./middleware/authenticateRefreshToken');
-const express = require('express');
-const mongoose = require('mongoose');
-
+const express = require('express');   
+const mongoose = require('mongoose'); 
+ 
 const RefreshToken = require('./models/refreshTokenModel');
 const { generateAccessToken, generateRefreshToken } = require('./utils/tokenUtils');
 const User = require('./models/userModel');
@@ -49,7 +49,6 @@ const logger = winston.createLogger({
 
 // Example log
 logger.info('This is an info log message');
-
 
 
 
@@ -106,22 +105,24 @@ app.post('/api/refresh-token', async (req, res) => {
     console.error('Error refreshing token:', error);
     res.status(500).json({ error: 'Error refreshing token' });
   }
-});
+}); 
 
       // General AI routes
 app.use('/api', chatbotRoutes);
 app.use('/api', otpRoutes);
-// Connect to MongoDB   
-mongoose.connect(process.env.MONGO_URI)
+// Connect to MongoDB  
+  
+const MONGO_URI = process.env.MONGO_URI || "mongodb+srv://deniskiplimo593:Denis341170495@cluster0.xc7g7f1.mongodb.net/?retryWrites=true&w=majority&directConnection=true";
+
+mongoose.connect(MONGO_URI)
   .then(() => console.log('MongoDB connected'))
   .catch(err => console.error('MongoDB connection error:', err));
-
 // Create transporter object using SMTP transport
 const transporter = nodemailer.createTransport({
   host: process.env.HOST,
   port: process.env.PORT,
   secure: process.env.PORT == 465, // true for port 465 (SSL), false for other ports (TLS)
-  auth: {
+  auth: { 
     user: process.env.USERNAME,
     pass: process.env.PASS,
   },
