@@ -142,6 +142,7 @@ async function codeLlama(instruction, language, port) {
     }
 }
 
+
 /**
  * Summarizes text using the AI model.
  * @param {string} text - The text to summarize.
@@ -174,172 +175,163 @@ exports.chatbot = async (userMessage, port) => {
     exports.log("INFO", `💬 Chatbot processing message: "${userMessage}"`);
     return await exports.fetchAIResponseFromServer(userMessage, "English", port);
 };
-// Code refactoring, optimization, unit testing, and algorithm suggestion
-// Exported function to refactor the code for better readability or performance
-exports.refactorCode = async (code, language, port = 4000) => {
-    const llamaSystemPrompt =
-        `You are an AI assistant specializing in code refactoring. ` +
-        `Your task is to improve the given code, making it more efficient or readable while maintaining the original functionality.`;
 
-    const api = llamacpp.Api({
-        baseUrl: {
-            host: "localhost",
-            port: Number(port) || 4000,  // Default to 4000 if port is undefined or invalid
-        },
+/**
+ * Refactors code for better readability and performance.
+ * @param {string} code - The source code to refactor.
+ * @param {string} language - Programming language.
+ * @param {number} port - The AI server port.
+ * @returns {Promise<string>} - Refactored code.
+ */
+exports.refactorCode = async (code, language, port = 4000) => {
+    exports.log("INFO", `🔄 Refactoring ${language} code...`);
+
+    const llamaSystemPrompt = `You are an AI assistant specializing in code refactoring. Improve the given code while maintaining its functionality.`;
+
+    const validPort = Number.isNaN(Number(port)) ? 4000 : port;
+    const api = new llamacpp.Api({
+        baseUrl: `http://localhost:${validPort}`,
     });
 
-    try {
-        const timeout = 5000;
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeout);
+    const timeout = 10000; // Increased timeout to 10 seconds
+    const controller = new AbortController();
+    let timeoutId;
 
-        // Stream the result from the API
+    try {
+        timeoutId = setTimeout(() => {
+            controller.abort();
+            exports.log("ERROR", "⏳ Request timed out.");
+        }, timeout);
+
+        // Ensure 'code' is a valid string
+        if (typeof code !== 'string') {
+            if (typeof code === 'object' && code !== null) {
+                if (code.body?.code) {
+                    // Extract `code` from request body if present
+                    code = code.body.code;
+                } else {
+                    exports.log("ERROR", "❌ Invalid 'code' parameter. Expected a string or valid object.");
+                    return "Error: Invalid code input.";
+                }
+            } else {
+                exports.log("ERROR", "❌ Code must be a string.");
+                return "Error: Code must be a string.";
+            }
+        }
+
+        // Log sanitized input
+        exports.log("INFO", `Sending code to AI server:\n${code}`);
+        exports.log("INFO", `Language: ${language}`);
+
+        // Stream AI-generated refactored code
         const textStream = await streamText({
             signal: controller.signal,
-            model: llamacpp
-                .CompletionTextGenerator({
-                    api: api,
-                    temperature: 0,
-                    stopSequences: ["\n"],
-                })
-                .withInstructionPrompt(),
+            model: new llamacpp.CompletionTextGenerator({
+                api,
+                temperature: 0,
+                stopSequences: ["\n"],
+            }),
             prompt: {
                 system: llamaSystemPrompt,
-                instruction: `Please refactor the following ${language} code for better readability or performance:\n\`\`\`${language}\n${code}\n\`\`\``,
-                responsePrefix: "Refactored code: ",
+                instruction: `Please refactor the following ${language} code for better readability and efficiency:\n\`\`\`${language}\n${code}\n\`\`\``,
+                responsePrefix: "Refactored code:\n",
             },
         });
 
         let response = "";
-        // Handle each chunk of text from the stream
         for await (const textPart of textStream) {
-            // Append to the response text and handle stream correctly
             response += textPart;
         }
 
-        clearTimeout(timeoutId); // Clear the timeout if the stream finishes
-        return response || "No refactored code returned."; // Ensure something is returned
+        clearTimeout(timeoutId); // Clear timeout after success
+        exports.log("INFO", "✅ Response completed.");
+        return response.trim() || "No refactored code returned.";
 
     } catch (error) {
-        clearTimeout(timeoutId); // Clear timeout on error
-        console.error("❌ Error refactoring code:", error.message);
-        return `An error occurred while refactoring the code: ${error.message}`; // Provide error message
+        clearTimeout(timeoutId); // Clear timeout in case of error
+        
+        // Log detailed error
+        exports.log("ERROR", `❌ Refactoring error: ${error.message}`);
+
+        if (error.response) {
+            exports.log("ERROR", `API response: ${JSON.stringify(error.response)}`);
+        } else if (error.stack) {
+            exports.log("ERROR", `Stack trace: ${error.stack}`);
+        }
+
+        return `An error occurred while refactoring the code: ${error.message}`;
     }
 };
 
-// Exported function to optimize the code for better performance
-exports.optimizeCode = async (code, language, port) => {
-    const llamaSystemPrompt =
-        `You are an AI assistant specializing in code optimization. ` +
-        `Your task is to improve the performance of the given code by reducing time complexity or memory usage.`;
+/**
+ * Optimizes code for better performance.
+ * @param {string} code - The source code to optimize.
+ * @param {string} language - Programming language.
+ * @param {number} port - The AI server port.
+ * @returns {Promise<string>} - Optimized code.
+ */
+exports.optimizeCode = async (code, language, port = 4000) => {
+    exports.log("INFO", `🚀 Optimizing ${language} code...`);
 
-    const api = llamacpp.Api({
-        baseUrl: {
-            host: "localhost",
-            port: Number(port),
-        },
+    if (!port || isNaN(port)) {
+        exports.log("ERROR", `❌ Invalid port: ${port}. Using default port 4000.`);
+        port = 4000; // Default port if invalid
+    }
+
+    const llamaSystemPrompt = `You are an AI assistant specializing in code optimization. Improve the given code by reducing time complexity or memory usage.`;
+
+    const api = new llamacpp.Api({
+        baseUrl: `http://localhost:${port}`,
     });
+
+    let timeoutId = null; // Declare timeoutId outside try block
 
     try {
         const timeout = 5000;
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeout);
+        timeoutId = setTimeout(() => controller.abort(), timeout); // Assign timeoutId
 
         const textStream = await streamText({
             signal: controller.signal,
-            model: llamacpp
-                .CompletionTextGenerator({
-                    api: api,
-                    temperature: 0,
-                    stopSequences: ["\n"],
-                })
-                .withInstructionPrompt(),
+            model: new llamacpp.CompletionTextGenerator({
+                api,
+                temperature: 0,
+                stopSequences: ["\n"],
+            }),
             prompt: {
                 system: llamaSystemPrompt,
-                instruction: `Please optimize the following ${language} code for better performance (e.g., reduce time complexity, improve memory usage):\n\`\`\`${language}\n${code}\n\`\`\``,
-                responsePrefix: "Optimized code: ",
+                instruction: `Optimize the following ${language} code for performance:\n\`\`\`${language}\n${code}\n\`\`\``,
+                responsePrefix: "Optimized code:\n",
             },
         });
 
         let response = "";
         for await (const textPart of textStream) {
-            process.stdout.write(textPart);
             response += textPart;
         }
 
         clearTimeout(timeoutId);
-        return response;
+        return response.trim() || "No optimized code returned.";
 
     } catch (error) {
-        console.error("❌ Error optimizing code:", error.message);
-        clearTimeout(timeoutId);
+        if (timeoutId) clearTimeout(timeoutId); // Only clear timeout if it was set
+        exports.log("ERROR", `❌ Optimization error: ${error.message}`);
         return "An error occurred while optimizing the code.";
     }
 };
 
-
-// Algorithm Suggestion
-// Exported function to suggest an algorithm for a given problem
-exports.suggestAlgorithm = async (problemDescription, port = 4000) => { 
-    const llamaSystemPrompt =
-        `You are an AI assistant specializing in algorithm design. ` +
-        `Given a problem description, suggest an appropriate algorithm or approach to solve it.`;
-
-    // Ensure port is a valid number, defaulting to 4000 if invalid
-    const validPort = Number.isNaN(Number(port)) ? 4000 : Number(port);
-
-    const api = llamacpp.Api({
-        baseUrl: {
-            host: "localhost",
-            port: validPort,
-        },
-    });
-
-    let timeoutId; // Declare timeoutId outside the try block
-
-    try {
-        const timeout = 5000;
-        const controller = new AbortController();
-        timeoutId = setTimeout(() => controller.abort(), timeout); // Assign timeoutId here
-
-        const textStream = await streamText({
-            signal: controller.signal,
-            model: llamacpp.CompletionTextGenerator({
-                api: api,
-                temperature: 0,
-                stopSequences: ["\n"],
-            }).withInstructionPrompt(),
-            prompt: {
-                system: llamaSystemPrompt,
-                instruction: `Suggest an algorithm or approach to solve the following problem:\n${problemDescription}`,
-                responsePrefix: "Suggested Algorithm: ",
-            },
-        });
-
-        let response = "";
-        for await (const textPart of textStream) {
-            process.stdout.write(textPart);
-            response += textPart;
-        }
-
-        clearTimeout(timeoutId); // Clear timeout here
-        return response;
-
-    } catch (error) {
-        console.error("❌ Error suggesting algorithm:", error.message);
-        if (timeoutId) clearTimeout(timeoutId); // Clear timeout if it exists
-        return "An error occurred while suggesting an algorithm.";
-    }
-};
-
-// Function to handle AI responses from the client
+/**
+ * Main API handler to process AI requests.
+ * @param {Object} req - Express request object.
+ * @param {Object} res - Express response object.
+ */
 exports.getAIResponse = async (req, res) => {
     let { prompt, instruction, language, port } = req.body;
 
     prompt = prompt || instruction;
-    port = Number(port) || DEFAULT_PORT; // Ensure port is a number
+    port = Number(port) || getRunningPort();
 
-    if (!prompt || typeof prompt !== "string" || prompt.trim() === "") {
+    if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
         return res.status(400).json({ error: 'Prompt is required and must be a non-empty string' });
     }
 
@@ -347,21 +339,16 @@ exports.getAIResponse = async (req, res) => {
         return res.status(400).json({ error: 'Invalid port number' });
     }
 
-    logRequest('Received AI request', { prompt, language, port });
+    exports.log("INFO", `Request received with prompt: "${prompt}"`);
 
     try {
         let response;
-
         if (isProgrammingTask(prompt)) {
-            language = language || "python"; // Default to Python if missing
-            logRequest('Programming request detected', { prompt, language });
-
-            // Handle programming-related tasks with importedCodeLlama
+            language = language || "python";
+            exports.log("INFO", `🖥️ Detected programming request. Using CodeLlama for ${language}.`);
             response = await importedCodeLlama(prompt, language, port);
         } else {
-            logRequest('General chatbot request detected', { prompt });
-
-            // Use generalLlama for non-programming related tasks
+            exports.log("INFO", "💬 General chatbot request detected. Using GeneralLlama.");
             response = await generalLlama(prompt, port);
         }
 
@@ -370,121 +357,198 @@ exports.getAIResponse = async (req, res) => {
         }
 
         return res.status(200).json({ response });
-
     } catch (error) {
-        console.error('❌ AI Response Error:', error);
+        exports.log("ERROR", `🚨 AI Response Error: ${error.message}`);
         return res.status(500).json({ error: 'Internal server error', details: error.message });
     }
 };
 
-// Function to refresh AI models (can be used to trigger model refresh)
+/**
+ * Helper function for logging.
+ * @param {string} level - Log level (INFO, ERROR, etc.).
+ * @param {string} message - Log message.
+ */
+exports.log = (level, message) => {
+    console.log(`[${level}] ${message}`);
+};
+
+/**
+ * Suggests an algorithm for a given problem.
+ * @param {string} problemDescription - Description of the problem.
+ * @param {number} port - The AI server port.
+ * @returns {Promise<string>} - Suggested algorithm.
+ */
+exports.suggestAlgorithm = async (problemDescription, port = 4000) => {
+    const llamaSystemPrompt = `You are an AI assistant specializing in algorithm design. 
+    Given a problem description, suggest an appropriate algorithm or approach to solve it.`;
+
+    const api = new llamacpp.Api({
+        baseUrl: `http://localhost:${port}`,
+    });
+
+    let timeoutId = null;
+
+    try {
+        const timeout = 5000;
+        const controller = new AbortController();
+        timeoutId = setTimeout(() => {
+            exports.log("ERROR", "❌ Timeout: Request took too long, aborting...");
+            controller.abort();
+        }, timeout);
+
+        exports.log("INFO", "✅ Requesting algorithm suggestion...");
+
+        const textStream = await streamText({
+            signal: controller.signal,
+            model: new llamacpp.CompletionTextGenerator({
+                api,
+                temperature: 0,
+                stopSequences: ["\n"],
+            }),
+            prompt: {
+                system: llamaSystemPrompt,
+                instruction: `Suggest an algorithm or approach to solve the following problem:\n${problemDescription}`,
+                responsePrefix: "Suggested Algorithm:\n",
+            },
+        });
+
+        let response = "";
+        for await (const textPart of textStream) {
+            if (!textPart) break;
+            exports.log("INFO", `📝 Received: ${textPart}`);
+            response += textPart;
+        }
+
+        clearTimeout(timeoutId);
+        exports.log("INFO", "✅ Response complete.");
+        return response.trim() || "No response received.";
+
+    } catch (error) {
+        exports.log("ERROR", `❌ Error suggesting algorithm: ${error.message}`);
+        if (timeoutId) clearTimeout(timeoutId);
+        return "An error occurred while suggesting an algorithm.";
+    }
+};
+
+// Express route handler to process API requests for algorithm suggestions
+exports.generateAlgorithmSuggestion = async (req, res) => {
+    const { problemDescription, port } = req.body;
+
+    if (!problemDescription) {
+        return res.status(400).json({ error: "Problem description is required." });
+    }
+
+    try {
+        const response = await exports.suggestAlgorithm(problemDescription, port);
+        return res.json({ algorithm: response });
+    } catch (error) {
+        exports.log("ERROR", `❌ Error generating algorithm suggestion: ${error.message}`);
+        return res.status(500).json({ error: "An error occurred while generating the algorithm suggestion." });
+    }
+};
+
+// Function to check if AI server is available
+exports.checkServerAvailability = async (port) => {
+    const serverUrl = `http://localhost:${port}`;
+    try {
+        await axios.get(serverUrl);
+        exports.log("INFO", `✅ AI server is ready at ${serverUrl}`);
+        return true;
+    } catch (error) {
+        exports.log("ERROR", `❌ Server is unavailable at ${serverUrl}`);
+        return false;
+    }
+};
+
+/**
+ * Generates a chatbot response using the AI model.
+ * @param {string} prompt - The user's input.
+ * @param {number} port - The AI server port (default: 4000).
+ * @returns {Promise<string>} - AI-generated chatbot response.
+ */
+exports.getChatbotResponse = async function (prompt, port = 4000) {
+    const timeout = 5000;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    try {
+        console.log("INFO: Generating chatbot response...");
+
+        const isServerReady = await exports.checkServerAvailability(port);
+        if (!isServerReady) {
+            return "Server is unavailable. Please try again later.";
+        }
+
+        const serverUrl = `http://localhost:${port}`;
+        const api = new llamacpp.Api({ serverUrl });
+
+        const textStream = await streamText({
+            signal: controller.signal,
+            model: new llamacpp.CompletionTextGenerator({
+                api,
+                temperature: 0.7, // Slight randomness for more natural responses
+                stopSequences: ["\n"], // Ensures cleaner responses
+            }).withInstructionPrompt(),
+            prompt: {
+                system: "You are an AI chatbot that provides helpful and concise responses.",
+                instruction: prompt,
+                responsePrefix: "AI:",
+            },
+        });
+
+        let response = "";
+        for await (const textPart of textStream) {
+            response += textPart;
+        }
+
+        clearTimeout(timeoutId);
+        console.log("INFO: Chatbot response generated.");
+        return response.trim() || "No response received.";
+    } catch (error) {
+        clearTimeout(timeoutId);
+        console.error(`ERROR: Error generating chatbot response: ${error.message}`);
+        return `An error occurred: ${error.message}`;
+    }
+};
+
+/**
+ * Express route handler for chatbot responses.
+ */
+exports.generateChatbotResponse = async function (req, res) {
+    const { prompt, port } = req.body;
+
+    if (!prompt) {
+        return res.status(400).json({ error: "Prompt is required." });
+    }
+
+    try {
+        const response = await exports.getChatbotResponse(prompt, port);
+        return res.json({ response });
+    } catch (error) {
+        console.error(`ERROR: Error generating chatbot response: ${error.message}`);
+        return res.status(500).json({ error: "An error occurred while processing your request." });
+    }
+};
+
+// Unit Test Generation
+// Function to refresh AI models (placeholder)
 exports.refreshModel = async (req, res) => {
     try {
-        console.log('🔄 Refreshing AI models...');
-        return res.status(200).json({ message: 'Models refreshed successfully' });
+        exports.log("INFO", "🔄 Refreshing AI models...");
+        return res.status(200).json({ message: "Models refreshed successfully." });
     } catch (error) {
-        console.error('❌ Error refreshing models:', error);
-        return res.status(500).json({ error: 'Error refreshing AI models' });
+        exports.log("ERROR", `❌ Error refreshing models: ${error.message}`);
+        return res.status(500).json({ error: "Error refreshing AI models." });
     }
 };
 
 // Function to check server health
 exports.checkServerHealth = (req, res) => {
     try {
-        return res.status(200).json({ status: '✅ Server is up and running' });
+        return res.status(200).json({ status: "✅ Server is up and running" });
     } catch (error) {
-        console.error('❌ Error checking server health:', error);
-        return res.status(500).json({ error: 'Error checking server health' });
-    }
-};
-// Function to log requests and responses (replace with your actual logging system)
-
-
-// Exported function to generate chatbot responses
-exports.getChatbotResponse = async (prompt, port) => {
-    const timeout = 5000;  // 5 seconds timeout for AI response
-    const controller = new AbortController();  // Create an AbortController instance
-    const timeoutId = setTimeout(() => controller.abort(), timeout);  // Set the timeout
-
-    try {
-        logRequest('Generating chatbot response', { prompt });
-
-        const serverUrl = `http://localhost:${port}`;
-        const api = llamacpp.Api({
-            baseUrl: {
-                host: "localhost",
-                port: `${port}`,
-            },
-        });
-
-        // Exported function to check if the server is available
-        exports.checkServerAvailability = async () => {
-            try {
-                await axios.get(serverUrl);
-                console.log(`AI server is ready at ${serverUrl}`);
-                return true;
-            } catch (error) {
-                console.error(`Server is unavailable at ${serverUrl}`);
-                return false;
-            }
-        };
-
-        const isServerReady = await exports.checkServerAvailability();
-        if (!isServerReady) {
-            return 'Server is unavailable. Please try again later.';
-        }
-
-        // Proceed with model response generation if server is available
-        const textStream = await streamText({
-            model: llamacpp.CompletionTextGenerator({
-                api: api,
-                temperature: 0,  // Set temperature to 0 for deterministic output
-            }).withInstructionPrompt(),
-            prompt: {
-                system: `You are an AI assistant designed to help with a wide range of topics. Please respond clearly and directly.`,
-                instruction: prompt,  // Use user input for the instruction
-            },
-        });
-
-        let response = '';
-        for await (const textPart of textStream) {
-            response += textPart;
-        }
-
-        // Clear timeout once the response is received
-        clearTimeout(timeoutId);
-
-        logRequest("Chatbot response generated", { response });
-
-        return response;
-
-    } catch (error) {
-        // Handle errors including timeout
-        clearTimeout(timeoutId);  // Ensure timeout is cleared
-        console.error('❌ Error generating chatbot response:', error);
-        return "An error occurred while generating the response.";
-    }
-};
-
-// Exported function to handle chatbot response generation via API
-exports.generateChatbotResponse = async (req, res) => {
-    const { prompt, port } = req.body;  // Extract the prompt and port from the request body
-    
-    if (!prompt || !port) {
-        return res.status(400).json({ error: 'Prompt and port are required.' });
-    }
-
-    try {
-        // Generate the chatbot response
-        const response = await exports.getChatbotResponse(prompt, port);
-        
-        // Send the generated response back as JSON
-        return res.json({ response });
-    } catch (error) {
-        console.error('Error generating chatbot response:', error);
-        
-        // Send a 500 error response if something goes wrong
-        return res.status(500).json({ error: 'An error occurred while processing your request.' });
+        exports.log("ERROR", `❌ Error checking server health: ${error.message}`);
+        return res.status(500).json({ error: "Error checking server health." });
     }
 };
 
@@ -532,96 +596,27 @@ exports.generateUnitTestsForCode = async (code, language, port = 4000) => {
 
         clearTimeout(timeoutId);
         return response;
-
     } catch (error) {
-        console.error("❌ Error generating unit tests:", error.message);
+        exports.log("ERROR", `❌ Error generating unit tests: ${error.message}`);
         clearTimeout(timeoutId);
         return "An error occurred while generating unit tests.";
     }
 };
-
 
 // Exported controller function for handling chatbot generation request
-exports.generateUnitTestsForCode = async (code, language, port = 4000) => {
-    const llamaSystemPrompt =
-        `You are an AI assistant specializing in writing unit tests. ` +
-        `Your task is to generate comprehensive unit tests for the given ${language} code.`;
-
-    const api = llamacpp.Api({
-        baseUrl: {
-            host: "localhost",
-            port: Number(port) || 4000, // Default to 4000 if port is undefined or invalid
-        },
-    });
-
-    let timeoutId = null; // Declare timeoutId to prevent ReferenceError
-
-    try {
-        const timeout = 5000;
-        const controller = new AbortController();
-        timeoutId = setTimeout(() => {
-            console.error("❌ Timeout: Request took too long, aborting...");
-            controller.abort();
-        }, timeout); // Assign timeoutId
-
-        console.log("✅ Requesting unit tests...");
-
-        const textStream = await streamText({
-            signal: controller.signal,
-            model: llamacpp
-                .CompletionTextGenerator({
-                    api: api,
-                    temperature: 0,
-                    stopSequences: ["\n"],
-                })
-                .withInstructionPrompt(),
-            prompt: {
-                system: llamaSystemPrompt,
-                instruction: `Please generate unit tests for the following ${language} code:\n\`\`\`${language}\n${code}\n\`\`\``,
-                responsePrefix: "Generated unit tests: ",
-            },
-        });
-
-        let response = "";
-        for await (const textPart of textStream) {
-            if (!textPart) break; // Ensure it doesn't loop infinitely
-            console.log("📝 Received:", textPart);
-            response += textPart;
-        }
-
-        clearTimeout(timeoutId);
-        console.log("✅ Response complete.");
-        return response || "No response received."; // Handle empty response case
-
-    } catch (error) {
-        console.error("❌ Error generating unit tests:", error.message);
-        if (timeoutId) clearTimeout(timeoutId); // Ensure timeout is cleared in case of error
-        return "An error occurred while generating unit tests.";
-    }
-};
-
-// Express route handler to process API requests for generating unit tests
+// Function to generate unit tests for given code and language
 exports.generateUnitTests = async (req, res) => {
-    const { code, language, port } = req.body;  // Extract the code, language, and port from the request body
+    const { code, language, port } = req.body;
 
-    if (!code || !language || !port) {
-        return res.status(400).json({ error: 'Code, language, and port are required.' });
+    if (!code || !language) {
+        return res.status(400).json({ error: 'Code and language are required.' });
     }
 
     try {
-        // Generate the unit tests by calling the helper function
         const unitTestResponse = await exports.generateUnitTestsForCode(code, language, port);
-        
-        // Send the generated unit test response back as JSON
         return res.json({ unitTests: unitTestResponse });
     } catch (error) {
-        console.error('Error generating unit tests:', error);
-        
-        // Send a 500 error response if something goes wrong
+        exports.log("ERROR", `❌ Error generating unit tests: ${error.message}`);
         return res.status(500).json({ error: 'An error occurred while generating unit tests.' });
     }
 };
-
-
-
-  

@@ -4,7 +4,8 @@ const { query, validationResult } = require('express-validator');
 const authenticateRefreshToken = require('./middleware/authenticateRefreshToken');
 const express = require('express');   
 const mongoose = require('mongoose'); 
- 
+const codeLlamaRoutes = require("./routes/codeLlamaRoutes");
+const generalLlamaRoutes = require("./routes/generalLlamaRoutes");
 const RefreshToken = require('./models/refreshTokenModel');
 const { generateAccessToken, generateRefreshToken } = require('./utils/tokenUtils');
 const User = require('./models/userModel');
@@ -110,6 +111,8 @@ app.post('/api/refresh-token', async (req, res) => {
       // General AI routes
 app.use('/api', chatbotRoutes);
 app.use('/api', otpRoutes);
+app.use("/api", codeLlamaRoutes);  // CodeLlama endpoints
+app.use("/api", generalLlamaRoutes);  // GeneralLlama endpoints
 // Connect to MongoDB  
   
 const MONGO_URI = process.env.MONGO_URI || "mongodb+srv://deniskiplimo593:Denis341170495@cluster0.xc7g7f1.mongodb.net/?retryWrites=true&w=majority&directConnection=true";

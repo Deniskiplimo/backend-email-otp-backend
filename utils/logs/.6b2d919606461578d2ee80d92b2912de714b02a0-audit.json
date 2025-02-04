@@ -19,6 +19,21 @@
             "date": 1738444680700,
             "name": "/home/denis/backend-email-otp-backend/utils/logs/error-2025-02-02.log",
             "hash": "73241b114287259f53049830fe0c4cc953f74e17b6b91b990788f9d1936d28c4"
+        },
+        {
+            "date": 1738530040327,
+            "name": "/home/denis/backend-email-otp-backend/utils/logs/error-2025-02-03.log",
+            "hash": "1a079a72bdab838dd08af051d4e629c178ef40eee9e961d92aa514a0d50279ec"
+        },
+        {
+            "date": 1738676535865,
+            "name": "/home/denis/backend-email-otp-backend/utils/logs/error-2025-02-04.log",
+            "hash": "987bc6e324d7108412e978826b4fb25792190cefb896857daf093f6e79cb7bb5"
+        },
+        {
+            "date": 1738702813348,
+            "name": "/home/denis/backend-email-otp-backend/utils/logs/error-2025-02-05.log",
+            "hash": "52418158a5cd27b4ca2a3bb5695af40d3532294716f6a8822e3bbc3581aae5a2"
         }
     ],
     "hashType": "sha256"
