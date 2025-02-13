@@ -1,4 +1,8 @@
 require('dotenv').config();
+const { generateCode, summarizeText, translateText } = require('./generalLlama');
+
+const { generateCodeWithCodeLlama } = require('./codeLlama');
+
 const ip = '8.8.8.8';
 const { query, validationResult } = require('express-validator');
 const authenticateRefreshToken = require('./middleware/authenticateRefreshToken');
@@ -9,6 +13,8 @@ const generalLlamaRoutes = require("./routes/generalLlamaRoutes");
 const RefreshToken = require('./models/refreshTokenModel');
 const { generateAccessToken, generateRefreshToken } = require('./utils/tokenUtils');
 const User = require('./models/userModel');
+const helmet = require("helmet"); // Security middleware
+
 const swaggerUi = require('swagger-ui-express');
 const rateLimit = require('express-rate-limit');
 const swaggerDocument = require('./swagger.json');
@@ -116,6 +122,32 @@ app.use("/api", generalLlamaRoutes);  // GeneralLlama endpoints
 // Connect to MongoDB  
   
 const MONGO_URI = process.env.MONGO_URI || "mongodb+srv://deniskiplimo593:Denis341170495@cluster0.xc7g7f1.mongodb.net/?retryWrites=true&w=majority&directConnection=true";
+
+
+
+// Middleware for security best practices
+app.use(helmet());
+
+// Rate limiting to prevent abuse
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // Limit each IP to 100 requests per windowMs
+    message: "Too many requests, please try again later."
+});
+app.use(limiter);
+
+/**
+ * @route GET /
+ * @desc Default route that provides a welcome message
+ * @access Public
+ * @bestPractices Keep the response lightweight for quick health checks
+ * @security Uses Helmet middleware for security headers
+ * @security Implements rate limiting to prevent abuse
+ */
+app.get("/", (req, res) => {
+    res.status(200).json({ message: "Welcome to the Llama & OTP API", status: "healthy" });
+});
+
 
 mongoose.connect(MONGO_URI)
   .then(() => console.log('MongoDB connected'))
@@ -694,6 +726,349 @@ const waitForServer = async (url, retries = 5, delayMs = 2000) => {
     }
   }
 };
+
+
+
+app.post("/completion", (req, res) => {
+  const { prompt } = req.body;
+
+  if (!prompt) {
+      return res.status(400).json({ error: "Prompt is required" });
+  }
+
+  console.log(`📝 Received request: ${prompt}`);
+
+  const command = `echo "${prompt}" | ./llamafile.exe -m tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf --n-predict 50`;
+
+  exec(command, (error, stdout, stderr) => {
+      if (error) {
+          console.error(`❌ Error executing llamafile: ${error.message}`);
+          return res.status(500).json({ error: "Internal Server Error", details: error.message });
+      }
+      if (stderr) {
+          console.error(`⚠️ Stderr from llamafile: ${stderr}`);
+      }
+
+      console.log(`✅ AI Response: ${stdout.trim()}`);
+      res.json({ response: stdout.trim() });
+  });
+});
+
+app.post("/api", (req, res) => {
+  const { type, input, language, targetLanguage } = req.body;
+
+  if (!type || !input) {
+      return res.status(400).json({ error: "Type and input are required" });
+  }
+
+  let commandPrompt = "";
+
+  switch (type) {
+      case "chat":
+          commandPrompt = input;
+          break;
+      case "generate":
+          if (!language) {
+              return res.status(400).json({ error: "Language is required for code generation" });
+          }
+          commandPrompt = `Generate ${language} code: ${input}`;
+          break;
+      case "summarize":
+          commandPrompt = `Summarize this: ${input}`;
+          break;
+      case "translate":
+          if (!targetLanguage) {
+              return res.status(400).json({ error: "Target language is required for translation" });
+          }
+          commandPrompt = `Translate to ${targetLanguage}: ${input}`;
+          break;
+      default:
+          return res.status(400).json({ error: "Invalid type. Use 'chat', 'generate', 'summarize', or 'translate'" });
+  }
+
+  console.log(`📝 Processing request: ${commandPrompt}`);
+
+  const command = `echo "${commandPrompt}" | ./llamafile.exe -m tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf --n-predict 100`;
+
+  exec(command, (error, stdout, stderr) => {
+      if (error) {
+          console.error(`❌ Error executing llamafile: ${error.message}`);
+          return res.status(500).json({ error: "Internal Server Error", details: error.message });
+      }
+      if (stderr) {
+          console.error(`⚠️ Stderr from llamafile: ${stderr}`);
+      }
+
+      console.log(`✅ AI Response: ${stdout.trim()}`);
+      res.json({ response: stdout.trim() });
+  });
+});
+
+const LLAMA_FILE = "./llamafile.exe";
+const MODEL = "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf";
+const N_PREDICT = 100;
+
+// Middleware for request validation
+const validateRequest = (fields) => (req, res, next) => {
+  const missingFields = fields.filter((field) => !req.body[field]);
+  if (missingFields.length) {
+    return res.status(400).json({ error: `Missing fields: ${missingFields.join(", ")}` });
+  }
+  next();
+};
+
+const { spawn } = require('child_process');
+
+const executeLlama = async (prompt) => {
+  return new Promise((resolve, reject) => {
+    console.log(`📝 Executing Llama with prompt: ${prompt}`);
+    const command = LLAMA_FILE; // Ensure the path is correct and not pointing to a GUI-enabled version
+    const args = [
+      `-m`, MODEL,
+      `--n-predict`, N_PREDICT,
+      // Make sure no web-related flags are included, remove unnecessary args.
+    ];
+
+    const llamaProcess = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+
+    let output = '';
+    let errorOutput = '';
+
+    llamaProcess.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+
+    llamaProcess.stderr.on('data', (data) => {
+      errorOutput += data.toString();
+    });
+
+    llamaProcess.on('close', (code) => {
+      if (code === 0) {
+        resolve(output.trim());
+      } else {
+        console.error(`❌ Llama execution failed with exit code ${code}: ${errorOutput}`);
+        reject({ message: "Internal Server Error", details: errorOutput });
+      }
+    });
+
+    // Timeout to avoid hanging
+    const timeout = setTimeout(() => {
+      llamaProcess.kill('SIGKILL');
+      reject({ message: "Execution Timeout", details: "The request took too long to process." });
+    }, 120000000); // Timeout after 2 minutes (adjust as needed)
+
+    llamaProcess.on('exit', () => {
+      clearTimeout(timeout);
+    });
+  });
+};
+
+
+// API 1: /completion
+app.post("/completion", async (req, res) => {
+  const { prompt } = req.body;
+
+  if (!prompt) {
+    return res.status(400).json({ error: "Prompt is required" });
+  }
+
+  console.log(`📝 Received request: ${prompt}`);
+
+  try {
+    const response = await executeLlama(prompt);
+    console.log(`✅ AI Response: ${response}`);
+    res.json({ response });
+  } catch (error) {
+    console.error(`❌ Error: ${error.message}`);
+    res.status(500).json({ error: "Internal Server Error", details: error.message });
+  }
+});
+
+// API 2: /api (for different types of prompts)
+app.post("/api", async (req, res) => {
+  const { type, input, language, targetLanguage } = req.body;
+
+  if (!type || !input) {
+    return res.status(400).json({ error: "Type and input are required" });
+  }
+
+  let commandPrompt = "";
+
+  switch (type) {
+    case "chat":
+      commandPrompt = input;
+      break;
+    case "generate":
+      if (!language) {
+        return res.status(400).json({ error: "Language is required for code generation" });
+      }
+      commandPrompt = `Generate ${language} code: ${input}`;
+      break;
+    case "summarize":
+      commandPrompt = `Summarize this: ${input}`;
+      break;
+    case "translate":
+      if (!targetLanguage) {
+        return res.status(400).json({ error: "Target language is required for translation" });
+      }
+      commandPrompt = `Translate to ${targetLanguage}: ${input}`;
+      break;
+    default:
+      return res.status(400).json({ error: "Invalid type. Use 'chat', 'generate', 'summarize', or 'translate'" });
+  }
+
+  console.log(`📝 Processing request: ${commandPrompt}`);
+
+  try {
+    const response = await executeLlama(commandPrompt);
+    console.log(`✅ AI Response: ${response}`);
+    res.json({ response });
+  } catch (error) {
+    console.error(`❌ Error: ${error.message}`);
+    res.status(500).json({ error: "Internal Server Error", details: error.message });
+  }
+});
+
+
+// Helper function to process input safely
+const parseInput = (req, res) => {
+  const inputRaw = req.query.input;
+  if (!inputRaw) {
+    return res.status(400).json({ error: "Input parameter is required" });
+  }
+
+  let input;
+  try {
+    input = JSON.parse(inputRaw);
+  } catch (error) {
+    return res.status(400).json({ error: "Invalid JSON format in input parameter" });
+  }
+
+  return input;
+};
+// AI Content Generation, Translate, and Summarize API
+app.post("/process", async (req, res) => {
+  const input = parseInput(req, res);
+  if (!input) return;
+
+  const { text, targetLanguage, action } = input; // action: 'generate', 'translate', or 'summarize'
+  if (!text || !action) {
+    return res.status(400).json({ error: "Text and action are required" });
+  }
+
+  console.log(`🛠️ Processing action: ${action} on text: ${text}`);
+
+  try {
+    // Set a timeout for llama model execution to avoid hanging requests
+    const timeout = 60000; // 60 seconds
+    let resultText = text;
+
+    // Handle different actions (generate, translate, summarize)
+    if (action === "generate") {
+      // Generate content based on input text
+      console.log("🤖 Generating content...");
+      resultText = await executeLlamaWithTimeout(`Generate content based on: ${text}`, timeout);
+      console.log(`Generated content: ${resultText}`);
+    } 
+    else if (action === "translate") {
+      if (!targetLanguage) {
+        return res.status(400).json({ error: "Target language is required for translation" });
+      }
+      // Translate the text to target language
+      console.log(`🌍 Translating to ${targetLanguage}...`);
+      resultText = await executeLlamaWithTimeout(`Translate to ${targetLanguage}: ${text}`, timeout);
+      console.log(`Translated text: ${resultText}`);
+    } 
+    else if (action === "summarize") {
+      // Summarize the input text
+      console.log("📝 Summarizing text...");
+      resultText = await executeLlamaWithTimeout(`Summarize the following text: ${text}`, timeout);
+      console.log(`Summary: ${resultText}`);
+    } 
+    else {
+      return res.status(400).json({ error: "Invalid action. Use 'generate', 'translate', or 'summarize'" });
+    }
+
+    // Respond with the processed text (generated, translated, or summarized)
+    res.json({ result: resultText });
+  } catch (error) {
+    console.error(`❌ Error: ${error.message}`);
+    // Check if it's a timeout issue or general error
+    if (error.message === "Execution Timeout") {
+      return res.status(408).json({ error: "Request Timeout", message: "The operation took too long to process." });
+    }
+    res.status(500).json({ error: "Internal Server Error", details: error.message });
+  }
+});
+
+// API 4: /generate (text generation)
+// API 1: /generate (code generation)
+app.post("/generate", async (req, res) => {
+  const input = parseInput(req, res);
+  if (!input) return;
+
+  const { text, language } = input;
+  if (!text || !language) {
+    return res.status(400).json({ error: "Text and language are required" });
+  }
+
+  const prompt = `Generate text in ${language}: ${text}`;
+  console.log(`📝 Generating text in ${language}: ${text}`);
+
+  try {
+    const response = await executeLlama(prompt); // No timeout here
+    console.log(`✅ AI Response: ${response}`);
+    res.json({ generatedText: response });
+  } catch (error) {
+    console.error(`❌ Error: ${error.message}`);
+    res.status(500).json({ error: "Internal Server Error", details: error.message });
+  }
+});
+
+// API 2: /summarize (text summarization)
+app.post("/summarize", async (req, res) => {
+  const input = parseInput(req, res);
+  if (!input) return;
+
+  const prompt = `Summarize this: ${input}`;
+  console.log(`📝 Summarizing text: ${input}`);
+
+  try {
+    const response = await executeLlama(prompt); // No timeout here
+    console.log(`✅ AI Response: ${response}`);
+    res.json({ response });
+  } catch (error) {
+    console.error(`❌ Error: ${error.message}`);
+    res.status(500).json({ error: "Internal Server Error", details: error.message });
+  }
+});
+
+// API 3: /translate (text translation)
+app.post("/translate", async (req, res) => {
+  const input = parseInput(req, res);
+  if (!input) return;
+
+  const { text, targetLanguage } = input;
+  if (!text || !targetLanguage) {
+    return res.status(400).json({ error: "Text and targetLanguage are required" });
+  }
+
+  console.log(`🌍 Translating to ${targetLanguage}: ${text}`);
+
+  try {
+    const response = await executeLlama(`Translate to ${targetLanguage}: ${text}`); // No timeout here
+    res.json({ translation: response });
+  } catch (error) {
+    console.error(`❌ Error: ${error.message}`);
+    res.status(500).json({ error: "Internal Server Error", details: error.message });
+  }
+});
+
+
+
+// Start the AI server on port 5000 (adjust port if needed)
+setupModel(4000);
+
 
 // Ensure Express JSON middleware is enabled
 app.use(express.json());

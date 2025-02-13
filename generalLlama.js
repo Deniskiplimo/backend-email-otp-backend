@@ -78,4 +78,46 @@ generalLlama("Summarize the following article about sustainable energy.", 4000)
 generalLlama("What is the current temperature in New York?", 4000)
     .then((result) => console.log("\nWeather Information:\n", result))
     .catch((error) => console.error("❌ Request failed:", error));
-    module.exports = {  generalLlama }; 
+    module.exports = {  generalLlama };  
+    
+
+    // generalLlama.js
+const exec = require('child_process').exec;
+
+const generateCode = (language, instruction) => {
+  return new Promise((resolve, reject) => {
+    const command = `echo "Generate ${language} code: ${instruction}" | ./llamafile.exe -m tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf --n-predict 100`;
+    
+    exec(command, (error, stdout, stderr) => {
+      if (error) reject(new Error(`Error: ${error.message}`));
+      if (stderr) console.warn(`⚠️ Stderr: ${stderr}`);
+      resolve(stdout.trim());
+    });
+  });
+};
+
+const summarizeText = (text) => {
+  return new Promise((resolve, reject) => {
+    const command = `echo "Summarize this: ${text}" | ./llamafile.exe -m tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf --n-predict 100`;
+    
+    exec(command, (error, stdout, stderr) => {
+      if (error) reject(new Error(`Error: ${error.message}`));
+      if (stderr) console.warn(`⚠️ Stderr: ${stderr}`);
+      resolve(stdout.trim());
+    });
+  });
+};
+
+const translateText = (text, targetLanguage) => {
+  return new Promise((resolve, reject) => {
+    const command = `echo "Translate to ${targetLanguage}: ${text}" | ./llamafile.exe -m tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf --n-predict 100`;
+    
+    exec(command, (error, stdout, stderr) => {
+      if (error) reject(new Error(`Error: ${error.message}`));
+      if (stderr) console.warn(`⚠️ Stderr: ${stderr}`);
+      resolve(stdout.trim());
+    });
+  });
+};
+
+module.exports = { generateCode, summarizeText, translateText };

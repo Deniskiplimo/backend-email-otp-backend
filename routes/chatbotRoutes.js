@@ -22,7 +22,7 @@ router.post('/refactor-code', chatbotController.refactorCode);  // Refactor prog
 router.post('/optimize-code', chatbotController.optimizeCode);  // Optimize programming code
 
 // New route for generating unit tests for code
-router.post('/generate', chatbotController.generateUnitTests); // Generate unit tests for code
+router.post('/generate', chatbotController.getAIResponse); // Generate unit tests for code
 router.post('/generateunittest', chatbotController.generateUnitTestsForCode); // Generate unit tests for code
 
 // New route for algorithm suggestion based on a problem description

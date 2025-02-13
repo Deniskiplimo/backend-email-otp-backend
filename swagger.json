@@ -341,6 +341,113 @@
       }
     }
   },
+  
+  "/generate": {
+    "post": {
+      "tags": ["Llama"],
+      "summary": "Generate code",
+      "description": "Generates code based on an instruction and programming language.",
+      "parameters": [
+        {
+          "name": "input",
+          "in": "query",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "example": "{\"text\": \"Write a Python function to calculate factorial\", \"language\": \"python\"}"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Successfully generated code",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "response": { "type": "string", "example": "def factorial(n): return 1 if n == 0 else n * factorial(n-1)" }
+                }
+              }
+            }
+          }
+        },
+        "400": { "description": "Bad request (Missing fields)" },
+        "500": { "description": "Internal server error" }
+      }
+    }
+  },
+  "/summarize": {
+    "post": {
+      "tags": ["Llama"],
+      "summary": "Summarize text",
+      "description": "Summarizes a given text into a shorter version.",
+      "parameters": [
+        {
+          "name": "input",
+          "in": "query",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "example": "{\"text\": \"Machine learning enables computers to learn from data and improve performance over time.\"}"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Successfully summarized text",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "summary": { "type": "string", "example": "Machine learning allows computers to improve with data." }
+                }
+              }
+            }
+          }
+        },
+        "400": { "description": "Bad request (Missing text)" },
+        "500": { "description": "Internal server error" }
+      }
+    }
+  },
+  "/translate": {
+    "post": {
+      "tags": ["Llama"],
+      "summary": "Translate text",
+      "description": "Translates a given text into a specified target language.",
+      "parameters": [
+        {
+          "name": "input",
+          "in": "query",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "example": "{\"text\": \"Hello, how are you?\", \"targetLanguage\": \"Spanish\"}"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Successfully translated text",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "translation": { "type": "string", "example": "Hola, ¿cómo estás?" }
+                }
+              }
+            }
+          }
+        },
+        "400": { "description": "Bad request (Missing fields)" },
+        "500": { "description": "Internal server error" }
+      }
+    }
+  }
+  ,
   "/api/explain": {
     "post": {
       "tags": ["LLama"],
