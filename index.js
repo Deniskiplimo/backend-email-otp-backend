@@ -2,7 +2,7 @@ require('dotenv').config();
 const { generateCode, summarizeText, translateText } = require('./generalLlama');
 
 const { generateCodeWithCodeLlama } = require('./codeLlama');
-
+const path = require('path');
 const ip = '8.8.8.8';
 const { query, validationResult } = require('express-validator');
 const authenticateRefreshToken = require('./middleware/authenticateRefreshToken');
@@ -26,7 +26,7 @@ console.log(geo);
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const sendEmail = require('./utils/sendEmail');
-const { exec } = require('child_process');
+const { spawn,exec } = require('child_process');
 const axios = require('axios');
 const fs = require('fs'); 
 const app = express();
@@ -641,7 +641,6 @@ app.post('/api/logout', authenticateToken, async (req, res) => {
     res.status(STATUS_CODES.INTERNAL_SERVER_ERROR).json({ error: 'Error logging out' });
   }
 });
-
 // Helper function to download files
 async function downloadFile(url, outputPath) {
   if (fs.existsSync(outputPath)) {
@@ -649,20 +648,15 @@ async function downloadFile(url, outputPath) {
     return;
   }
 
+  console.log(`Downloading ${outputPath}...`);
   const writer = fs.createWriteStream(outputPath);
-  const response = await axios({
-    url,
-    method: 'GET',
-    responseType: 'stream',
-  });
-
+  const response = await axios({ url, method: 'GET', responseType: 'stream' });
   const totalLength = response.headers['content-length'];
-
-  console.log(`Starting download of ${outputPath}...`);
   let downloadedLength = 0;
+
   response.data.on('data', (chunk) => {
     downloadedLength += chunk.length;
-    process.stdout.write(`Downloaded ${(downloadedLength / totalLength * 100).toFixed(2)}% (${downloadedLength} of ${totalLength} bytes)\r`);
+    process.stdout.write(`Downloaded ${(downloadedLength / totalLength * 100).toFixed(2)}%\r`);
   });
 
   response.data.pipe(writer);
@@ -670,7 +664,7 @@ async function downloadFile(url, outputPath) {
   return new Promise((resolve, reject) => {
     writer.on('finish', () => {
       console.log(`\nDownload of ${outputPath} completed.`);
-      fs.chmodSync(outputPath, '755');  // Add execute permissions
+      fs.chmodSync(outputPath, 0o755); // Add execute permissions
       resolve();
     });
     writer.on('error', reject);
@@ -680,53 +674,80 @@ async function downloadFile(url, outputPath) {
 // Function to start the AI server
 async function setupModel(port) {
   try {
-    console.log('Downloading llamafile.exe...');
     await downloadFile('https://github.com/Mozilla-Ocho/llamafile/releases/download/0.6/llamafile-0.6', 'llamafile.exe');
-
-    console.log('Downloading tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf...');
     await downloadFile('https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf', 'tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf');
-
-    console.log('Starting llamafile.exe server...');
+    
+    console.log(`Starting AI server on port ${port}...`);
     const command = `./llamafile.exe -m tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf --nobrowser --port ${port}`;
-    console.log(`Executing command: ${command}`);
-
     exec(command, (error, stdout, stderr) => {
-      if (error) {
-        console.error(`Error starting AI server: ${error.message}`);
-        return;
-      }
-      if (stderr) {
-        console.error(`stderr: ${stderr}`);
-        return;
-      }
-      console.log(`stdout: ${stdout}`);
-      console.log("AI server started successfully on port " + port);
+      if (error) return console.error(`Error: ${error.message}`);
+      if (stderr) return console.error(`stderr: ${stderr}`);
+      console.log(stdout);
     });
   } catch (error) {
-    console.error('An error occurred during setup:', error);
-    throw error; // Throw error to be caught by the main server
+    console.error('Setup error:', error);
+    throw error;
   }
 }
 
-// Function to wait for the AI server to be ready (with retries)
-const waitForServer = async (url, retries = 5, delayMs = 2000) => {
+// Function to wait for AI server readiness
+async function waitForServer(url, retries = 5, delayMs = 2000) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       await axios.get(url);
-      console.log(`AI server is ready at ${url}`);
-      return; // Server is up, exit the function
-    } catch (error) {
+      console.log(`AI server ready at ${url}`);
+      return;
+    } catch {
       if (attempt < retries) {
-        console.log(`AI server not ready, retrying... (${attempt}/${retries})`);
-        await new Promise(resolve => setTimeout(resolve, delayMs)); // Wait before retrying
+        console.log(`Retrying (${attempt}/${retries})...`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
       } else {
-        console.error(`AI server not ready after ${retries} attempts`);
-        throw new Error('AI server is not ready');
+        throw new Error('AI server failed to start');
       }
     }
   }
-};
+}
 
+// Function to execute AI model
+async function executeLlama(prompt) {
+  return new Promise((resolve, reject) => {
+    console.log(`Executing Llama with prompt: "${prompt}"`);
+    const llamaFilePath = path.resolve(__dirname, 'llamafile.exe');
+    
+    if (!fs.existsSync(llamaFilePath)) return reject({ message: "Llama executable not found", details: llamaFilePath });
+    try { fs.chmodSync(llamaFilePath, 0o755); } catch (err) { console.error("Permission issue", err); }
+    
+    const args = ['-m', 'tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf', '--n_predict', '128', '--ctx_size', '2048', '--threads', '8', '--nobrowser'];
+    console.log(`Running: ${llamaFilePath} ${args.join(' ')}`);
+    
+    const llamaProcess = spawn(llamaFilePath, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    let output = '', errorOutput = '';
+    
+    llamaProcess.stdin.write(`${prompt.trim()} </s>\n`);
+    llamaProcess.stdin.end();
+    
+    llamaProcess.stdout.on('data', (data) => {
+      const text = data.toString().trim();
+      if (!text.includes("system info") && text.length > 20) {
+        output += text + " ";
+        resolve(output.trim());
+      }
+    });
+
+    llamaProcess.stderr.on('data', (data) => errorOutput += data.toString());
+    
+    llamaProcess.on('close', (code) => {
+      if (code !== 0) reject({ message: "Error", details: errorOutput });
+    });
+    
+    setTimeout(() => {
+      llamaProcess.kill('SIGKILL');
+      reject({ message: "Timeout", details: "Execution took too long." });
+    }, 60000);
+  });
+}
+
+module.exports = { setupModel, waitForServer, executeLlama };
 
 
 app.post("/completion", (req, res) => {
@@ -817,51 +838,7 @@ const validateRequest = (fields) => (req, res, next) => {
   next();
 };
 
-const { spawn } = require('child_process');
 
-const executeLlama = async (prompt) => {
-  return new Promise((resolve, reject) => {
-    console.log(`📝 Executing Llama with prompt: ${prompt}`);
-    const command = LLAMA_FILE; // Ensure the path is correct and not pointing to a GUI-enabled version
-    const args = [
-      `-m`, MODEL,
-      `--n-predict`, N_PREDICT,
-      // Make sure no web-related flags are included, remove unnecessary args.
-    ];
-
-    const llamaProcess = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'] });
-
-    let output = '';
-    let errorOutput = '';
-
-    llamaProcess.stdout.on('data', (data) => {
-      output += data.toString();
-    });
-
-    llamaProcess.stderr.on('data', (data) => {
-      errorOutput += data.toString();
-    });
-
-    llamaProcess.on('close', (code) => {
-      if (code === 0) {
-        resolve(output.trim());
-      } else {
-        console.error(`❌ Llama execution failed with exit code ${code}: ${errorOutput}`);
-        reject({ message: "Internal Server Error", details: errorOutput });
-      }
-    });
-
-    // Timeout to avoid hanging
-    const timeout = setTimeout(() => {
-      llamaProcess.kill('SIGKILL');
-      reject({ message: "Execution Timeout", details: "The request took too long to process." });
-    }, 120000000); // Timeout after 2 minutes (adjust as needed)
-
-    llamaProcess.on('exit', () => {
-      clearTimeout(timeout);
-    });
-  });
-};
 
 
 // API 1: /completion
@@ -1113,4 +1090,4 @@ async function handleLlamaRequest(req, res, responseFunction) {
     console.error('Error processing request:', error);
     res.status(500).json({ error: 'An error occurred while processing the request' });
   }
-}   
+}    
