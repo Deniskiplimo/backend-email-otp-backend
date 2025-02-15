@@ -682,7 +682,42 @@ exports.generateUnitTestsForCode = async (code, language, port = 4000) => {
         return "An error occurred while generating unit tests.";
     }
 };
-
+exports.fetchAIResponseFromServer = async function (text, language = "English", port = 4000) {
+    try {
+      // Ensure text is provided and convert it to a string if necessary
+      if (!text || (typeof text !== "string" && typeof text !== "number")) {
+        throw new Error("Invalid input: text must be a string or number.");
+      }
+  
+      // AI server endpoint
+      const url = `http://localhost:${port}/completion`;
+  
+      // Convert object to a readable string if needed
+      const formattedText = typeof text === "object" ? JSON.stringify(text) : text;
+  
+      // Request payload
+      const payload = {
+        instruction: `Summarize: ${formattedText}`,  // Ensure it's always a string
+        language: language
+      };
+  
+      console.log(`[INFO] Sending AI request: ${payload.instruction} (Lang: ${language})`);
+  
+      // Send request to AI model
+      const response = await axios.post(url, payload, { timeout: 10000 }); // 10s timeout
+  
+      // Check response
+      if (response.data && response.data.response) {
+        console.log(`[INFO] AI Response Received: ${response.data.response}`);
+        return response.data.response;
+      } else {
+        throw new Error("Invalid response from AI server.");
+      }
+    } catch (error) {
+      console.error("❌ Error in fetchAIResponseFromServer:", error.message || error);
+      return "AI server is unavailable. Please try again later.";
+    }
+  };
 // Exported controller function for handling chatbot generation request
 // Function to generate unit tests for given code and language
 exports.generateUnitTests = async (req, res) => {

@@ -294,396 +294,163 @@
       }
     
   },
-  "/api/generate": {
-    "post": {
-      "tags": ["LLama"],
-      "summary": "Generate code or response from Llama model",
-      "description": "Generates code or response based on an instruction",
-      "parameters": [
-        {
-          "name": "instruction",
-          "in": "body",
-          "required": true,
-          "schema": {
-            "type": "object",
-            "properties": {
-              "instruction": {
-                "type": "string",
-                "example": "Generate a Python function to calculate factorial."
-              },
-              "language": {
-                "type": "string",
-                "example": "python"
-              }
-            }
-          }
-        }
-      ],
-      "responses": {
-        "200": {
-          "description": "Successfully generated response",
-          "schema": {
-            "type": "object",
-            "properties": {
-              "result": {
-                "type": "string",
-                "example": "def factorial(n):\n    if n == 0:\n        return 1\n    return n * factorial(n - 1)"
-              }
-            }
-          }
-        },
-        "400": {
-          "description": "Bad request, missing instruction or language"
-        },
-        "500": {
-          "description": "Server error"
-        }
-      }
-    }
-  },
-  
-  "/generate": {
+  "/api/ai/execute": {
     "post": {
       "tags": ["Llama"],
-      "summary": "Generate code",
-      "description": "Generates code based on an instruction and programming language.",
+      "summary": "Execute AI Task", 
       "parameters": [
         {
-          "name": "input",
-          "in": "query",
+          "in": "body",
+          "name": "body",
           "required": true,
           "schema": {
-            "type": "string",
-            "example": "{\"text\": \"Write a Python function to calculate factorial\", \"language\": \"python\"}"
+            "type": "object",
+            "properties": {
+              "prompt": { "type": "string" },
+              "task": { "type": "string" },
+              "maxTokens": { "type": "integer" },
+              "temperature": { "type": "number" },
+              "topK": { "type": "integer" }
+            }
           }
         }
       ],
       "responses": {
-        "200": {
-          "description": "Successfully generated code",
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "response": { "type": "string", "example": "def factorial(n): return 1 if n == 0 else n * factorial(n-1)" }
-                }
-              }
-            }
-          }
-        },
-        "400": { "description": "Bad request (Missing fields)" },
-        "500": { "description": "Internal server error" }
+        "200": { "description": "Execution successful" },
+        "400": { "description": "Bad Request" },
+        "500": { "description": "Execution failed" }
       }
     }
   },
-  "/summarize": {
+  "/api/ai/summarize": {
     "post": {
       "tags": ["Llama"],
-      "summary": "Summarize text",
-      "description": "Summarizes a given text into a shorter version.",
+      "summary": "Summarize Text",
       "parameters": [
         {
-          "name": "input",
-          "in": "query",
+          "in": "body",
+          "name": "body",
           "required": true,
           "schema": {
-            "type": "string",
-            "example": "{\"text\": \"Machine learning enables computers to learn from data and improve performance over time.\"}"
+            "type": "object",
+            "properties": {
+              "text": { "type": "string" },
+              "maxTokens": { "type": "integer" },
+              "temperature": { "type": "number" }
+            }
           }
         }
       ],
       "responses": {
-        "200": {
-          "description": "Successfully summarized text",
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "summary": { "type": "string", "example": "Machine learning allows computers to improve with data." }
-                }
-              }
-            }
-          }
-        },
-        "400": { "description": "Bad request (Missing text)" },
-        "500": { "description": "Internal server error" }
+        "200": { "description": "Summary generated" },
+        "400": { "description": "Bad Request" },
+        "500": { "description": "Summarization failed" }
       }
     }
   },
-  "/translate": {
+  "/api/ai/generate-blog": {
     "post": {
       "tags": ["Llama"],
-      "summary": "Translate text",
-      "description": "Translates a given text into a specified target language.",
+      "summary": "Generate Blog Post",
       "parameters": [
         {
-          "name": "input",
-          "in": "query",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "example": "{\"text\": \"Hello, how are you?\", \"targetLanguage\": \"Spanish\"}"
-          }
-        }
-      ],
-      "responses": {
-        "200": {
-          "description": "Successfully translated text",
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "translation": { "type": "string", "example": "Hola, ¿cómo estás?" }
-                }
-              }
-            }
-          }
-        },
-        "400": { "description": "Bad request (Missing fields)" },
-        "500": { "description": "Internal server error" }
-      }
-    }
-  }
-  ,
-  "/api/explain": {
-    "post": {
-      "tags": ["LLama"],
-      "summary": "Explain code in a specific language",
-      "description": "Provides an explanation of the provided code snippet",
-      "parameters": [
-        {
-          "name": "code",
           "in": "body",
+          "name": "body",
           "required": true,
           "schema": {
             "type": "object",
             "properties": {
-              "code": {
-                "type": "string",
-                "example": "def factorial(n):\n    if n == 0:\n        return 1\n    return n * factorial(n - 1)"
-              },
-              "language": {
-                "type": "string",
-                "example": "python"
-              }
+              "topic": { "type": "string" },
+              "wordCount": { "type": "integer" },
+              "tone": { "type": "string" },
+              "temperature": { "type": "number" }
             }
           }
         }
       ],
       "responses": {
-        "200": {
-          "description": "Successfully explained the code",
-          "schema": {
-            "type": "object",
-            "properties": {
-              "result": {
-                "type": "string",
-                "example": "This function calculates the factorial of a number recursively. The base case is when n equals 0, in which case the function returns 1."
-              }
-            }
-          }
-        },
-        "400": {
-          "description": "Bad request, missing code or language"
-        },
-        "500": {
-          "description": "Server error"
-        }
+        "200": { "description": "Blog generated" },
+        "400": { "description": "Bad Request" },
+        "500": { "description": "Blog generation failed" }
       }
     }
   },
-  "/api/debug": {
+  "/api/ai/translate": {
     "post": {
-      "tags": ["LLama"],
-      "summary": "Debug code in a specific language",
-      "description": "Analyzes and identifies issues in the provided code snippet",
+      "tags": ["Llama"],
+      "summary": "Translate Text",
       "parameters": [
         {
-          "name": "code",
           "in": "body",
+          "name": "body",
           "required": true,
           "schema": {
             "type": "object",
             "properties": {
-              "code": {
-                "type": "string",
-                "example": "def factorial(n):\n    if n == 0:\n        return 1\n    return n * factorial(n - 1)"
-              },
-              "language": {
-                "type": "string",
-                "example": "python"
-              }
+              "text": { "type": "string" },
+              "sourceLang": { "type": "string" },
+              "targetLang": { "type": "string" }
             }
           }
         }
       ],
       "responses": {
-        "200": {
-          "description": "Successfully debugged the code",
-          "schema": {
-            "type": "object",
-            "properties": {
-              "result": {
-                "type": "string",
-                "example": "No syntax errors detected. The function works as intended."
-              }
-            }
-          }
-        },
-        "400": {
-          "description": "Bad request, missing code or language"
-        },
-        "500": {
-          "description": "Server error"
-        }
+        "200": { "description": "Translation successful" },
+        "400": { "description": "Bad Request" },
+        "500": { "description": "Translation failed" }
       }
     }
   },
-  "/api/refactor": {
+  "/api/ai/generate-code": {
     "post": {
-      "tags": ["LLama"],
-      "summary": "Refactor code to improve readability or performance",
-      "description": "Provides refactoring suggestions for the provided code",
+      "tags": ["Llama"],
+      "summary": "Generate Code",
       "parameters": [
         {
-          "name": "code",
           "in": "body",
+          "name": "body",
           "required": true,
           "schema": {
             "type": "object",
             "properties": {
-              "code": {
-                "type": "string",
-                "example": "def factorial(n):\n    if n == 0:\n        return 1\n    return n * factorial(n - 1)"
-              },
-              "language": {
-                "type": "string",
-                "example": "python"
-              }
+              "description": { "type": "string" },
+              "language": { "type": "string" },
+              "maxTokens": { "type": "integer" },
+              "temperature": { "type": "number" }
             }
           }
         }
       ],
       "responses": {
-        "200": {
-          "description": "Successfully refactored the code",
-          "schema": {
-            "type": "object",
-            "properties": {
-              "result": {
-                "type": "string",
-                "example": "def factorial(n):\n    if n == 0: return 1\n    return n * factorial(n - 1)"
-              }
-            }
-          }
-        },
-        "400": {
-          "description": "Bad request, missing code or language"
-        },
-        "500": {
-          "description": "Server error"
-        }
+        "200": { "description": "Code generated" },
+        "400": { "description": "Bad Request" },
+        "500": { "description": "Code generation failed" }
       }
     }
   },
-  "/api/convert": {
+  "/api/ai/chat": {
     "post": {
-      "tags": ["LLama"],
-      "summary": "Convert code from one language to another",
-      "description": "Converts the provided code from one programming language to another",
+      "tags": ["Llama"],
+      "summary": "Chat with AI",
       "parameters": [
         {
-          "name": "code",
           "in": "body",
+          "name": "body",
           "required": true,
           "schema": {
             "type": "object",
             "properties": {
-              "code": {
-                "type": "string",
-                "example": "def factorial(n):\n    if n == 0:\n        return 1\n    return n * factorial(n - 1)"
-              },
-              "fromLanguage": {
-                "type": "string",
-                "example": "python"
-              },
-              "toLanguage": {
-                "type": "string",
-                "example": "javascript"
-              }
+              "message": { "type": "string" },
+              "context": { "type": "string" },
+              "temperature": { "type": "number" }
             }
           }
         }
       ],
       "responses": {
-        "200": {
-          "description": "Successfully converted the code",
-          "schema": {
-            "type": "object",
-            "properties": {
-              "result": {
-                "type": "string",
-                "example": "function factorial(n) {\n    if (n === 0) return 1;\n    return n * factorial(n - 1);\n}"
-              }
-            }
-          }
-        },
-        "400": {
-          "description": "Bad request, missing code or languages"
-        },
-        "500": {
-          "description": "Server error"
-        }
-      }
-    }
-  },
-  "/api/validate": {
-    "post": {
-      "tags": ["LLama"],
-      "summary": "Validate the syntax of the provided code",
-      "description": "Checks whether the provided code is syntactically correct in the specified language",
-      "parameters": [
-        {
-          "name": "code",
-          "in": "body",
-          "required": true,
-          "schema": {
-            "type": "object",
-            "properties": {
-              "code": {
-                "type": "string",
-                "example": "def factorial(n):\n    if n == 0:\n        return 1\n    return n * factorial(n - 1)"
-              },
-              "language": {
-                "type": "string",
-                "example": "python"
-              }
-            }
-          }
-        }
-      ],
-      "responses": {
-        "200": {
-          "description": "Successfully validated the code",
-          "schema": {
-            "type": "object",
-            "properties": {
-              "result": {
-                "type": "string",
-                "example": "No syntax errors detected."
-              }
-            }
-          }
-        },
-        "400": {
-          "description": "Bad request, missing code or language"
-        },
-        "500": {
-          "description": "Server error"
-        }
+        "200": { "description": "Chat response received" },
+        "400": { "description": "Bad Request" },
+        "500": { "description": "Chat response failed" }
       }
     }
   },
