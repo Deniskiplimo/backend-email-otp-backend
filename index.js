@@ -3,6 +3,7 @@ const { generateCode, summarizeText, translateText } = require('./generalLlama')
 const moment = require("moment");
 const { generateCodeWithCodeLlama } = require('./codeLlama');
 const path = require('path');
+const { llamacpp, streamText } = require("modelfusion");
 const ip = '8.8.8.8';
 const { query, validationResult } = require('express-validator');
 const authenticateRefreshToken = require('./middleware/authenticateRefreshToken');
@@ -725,6 +726,7 @@ async function executeLlama(options = {}) {
     maxTokens = 256,
     temperature = 0.7,
     topK = 50,
+    
     nThreads = Math.max(2, os.cpus().length - 1), // Optimize thread allocation
   } = options;
 
@@ -737,90 +739,110 @@ async function executeLlama(options = {}) {
 
   return runLlamaModel({ prompt, model, socket, maxTokens, temperature, topK, nThreads });
 }
+const PORT = 4000;
 
-async function runLlamaModel({ prompt, model, socket, maxTokens, temperature, topK, nThreads }) {
-  return new Promise((resolve, reject) => {
-    const llamaFilePath = path.resolve(__dirname, "llamafile.exe");
-    const modelPath = path.resolve(__dirname, model);
+// Check if the server is available
+async function checkServerAvailability(port) {
+    console.log("🔍 Checking server availability on port:", port);
 
-    if (!fs.existsSync(llamaFilePath)) {
-      return reject({ message: "❌ Llama executable not found", details: llamaFilePath });
-    }
-    if (!fs.existsSync(modelPath)) {
-      return reject({ message: "❌ Model file not found", details: modelPath });
+    if (!port) {
+        console.error("❌ Port is undefined or invalid");
+        return false;
     }
 
+    const serverUrl = `http://localhost:${port}`;
     try {
-      fs.chmodSync(llamaFilePath, 0o755);
-    } catch (err) {
-      console.error("⚠️ Permission issue:", err);
+        await axios.get(serverUrl);
+        console.log(`✅ AI server is ready at ${serverUrl}`);
+        return true;
+    } catch (error) {
+        console.error(`❌ Server is unavailable at ${serverUrl}`);
+        return false;
     }
- 
-    const args = [
-      "--model", modelPath,
-      "--ctx-size", "2048",  
-      "-n", maxTokens.toString(),  
-      "--threads", nThreads.toString(),  
-      "--nobrowser",
-    ];
-    
-    console.log(`🚀 Running: ${llamaFilePath} ${args.join(" ")}`);
-    const llamaProcess = spawn(llamaFilePath, args, { stdio: ["pipe", "pipe", "pipe"] });
-
-    let output = "";
-    let errorOutput = "";
-    let timeout;
-
-    // Handle stdout
-    llamaProcess.stdout.on("data", (data) => {
-      const text = data.toString().trim();
-      if (text) {
-        output += text + " ";
-        console.log(`✅ AI Response: ${text}`);
-        if (socket) socket.emit("ai_response", { chunk: text });
-
-        // Reset timeout on new data
-        clearTimeout(timeout);
-        timeout = setTimeout(() => {
-          console.error("⚠️ Execution timeout due to inactivity.");
-          llamaProcess.kill("SIGKILL");
-          reject({ message: "Execution Timeout", details: "No response received in time." });
-        }, 60000); // 60s inactivity timeout
-      }
-    });
-
-    // Handle stderr
-    llamaProcess.stderr.on("data", (data) => {
-      errorOutput += data.toString();
-    });
-
-    // Handle process exit
-    llamaProcess.on("close", (code) => {
-      clearTimeout(timeout);
-      if (code === 0 && output.trim()) {
-        resolve({
-          status: "success",
-          message: "Response generated successfully",
-          response: output.trim(),
-        });
-      } else {
-        console.error(`❌ Llama failed (code ${code}): ${errorOutput}`);
-        reject({ message: "Llama Execution Failed", details: errorOutput || "No meaningful response received." });
-      }
-    });
-
-    // Set initial timeout
-    timeout = setTimeout(() => {
-      console.error("⚠️ Initial execution timeout!");
-      llamaProcess.kill("SIGKILL");
-      reject({ message: "Execution Timeout", details: "The request took too long." });
-    }, 120000); // 120s global timeout
-
-    // Write prompt and start execution
-    llamaProcess.stdin.write(`${prompt.trim()} </s>\n`);
-    llamaProcess.stdin.end();
-  });
 }
+
+// Check server health
+async function checkServerHealth() {
+    try {
+        const response = await axios.get(`http://localhost:${PORT}/health`);
+        if (response.status === 200) {
+            console.log("✅ Server is up and running");
+            return true;
+        }
+        return false;
+    } catch (error) {
+        console.error("❌ Server health check failed");
+        return false;
+    } 
+}
+
+async function runLlamaModel({ prompt, model, socket, maxTokens, temperature, topK, nThreads, port = PORT }) { 
+    return new Promise(async (resolve, reject) => {
+        console.log("📝 Running Llama with:", { port, prompt, maxTokens, temperature, topK, nThreads });
+
+        if (!port) {
+            return reject({ message: "❌ Port is missing!" });
+        }
+
+        const isServerReady = await checkServerAvailability(port);
+        if (!isServerReady) {
+            return reject({ message: "❌ Llama server is not available" });
+        }
+
+        const llamaSystemPrompt =
+            `You are an AI assistant here to help with programming tasks. ` +
+            `Your responses will be clear, concise, and code-oriented. ` +
+            `Please follow the instructions and generate the requested code.`;
+
+        const api = llamacpp.Api({
+            baseUrl: `http://localhost:${port}`, // ✅ Fixed port usage
+        });
+
+        try {
+            const timeout = 5000;
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+            const textStream = await streamText({
+                signal: controller.signal,
+                model: llamacpp
+                    .CompletionTextGenerator({
+                        api: api,
+                        temperature: temperature,
+                        stopSequences: ["\n```"],
+                    })
+                    .withInstructionPrompt(),
+                prompt: {
+                    system: llamaSystemPrompt,
+                    instruction: prompt,
+                    responsePrefix: `Here is the response:\n`,
+                },
+            });
+
+            let response = "";
+            for await (const textPart of textStream) {
+                process.stdout.write(textPart);
+                response += textPart;
+                if (socket) socket.emit("ai_response", { chunk: textPart });
+            }
+
+            clearTimeout(timeoutId);
+            resolve({
+                status: "success",
+                message: "Response generated successfully",
+                response: response.trim(),
+            });
+        } catch (error) {
+            console.error("❌ Error generating response:", error.message);
+            reject({ message: "Llama Execution Failed", details: error.message });
+        }
+    });
+}
+
+// Start checking server availability
+checkServerAvailability(PORT);
+
+module.exports = { runLlamaModel, checkServerAvailability, checkServerHealth };
 // ✅ Middleware for request validation
 const validateRequest = (fields) => (req, res, next) => {
   const missingFields = fields.filter((field) => !req.body[field]);
