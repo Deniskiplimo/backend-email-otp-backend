@@ -5,6 +5,9 @@ const { generateCodeWithCodeLlama } = require('./codeLlama');
 const path = require('path');
 const { llamacpp, streamText } = require("modelfusion");
 const ip = '8.8.8.8';
+const os = require('os');
+const PORT = 4000;
+const { parentPort, workerData, isMainThread } = require("worker_threads");
 const { query, validationResult } = require('express-validator');
 const authenticateRefreshToken = require('./middleware/authenticateRefreshToken');
 const express = require('express');   
@@ -714,7 +717,7 @@ async function waitForServer(url, retries = 5, delayMs = 2000) {
     }
   }
 }
-const os = require('os');
+
 const nThreadsDefault = Math.max(1, os.cpus().length - 1);
 
 async function executeLlama(options = {}) {
@@ -739,7 +742,71 @@ async function executeLlama(options = {}) {
 
   return runLlamaModel({ prompt, model, socket, maxTokens, temperature, topK, nThreads });
 }
-const PORT = 4000;
+
+
+async function runLlamaModel({ prompt, model, socket, maxTokens, temperature, topK, nThreads, port = PORT }) { 
+  return new Promise(async (resolve, reject) => {
+      console.log("📝 Running Llama with:", { port, prompt, maxTokens, temperature, topK, nThreads });
+
+      if (!port) {
+          return reject({ message: "❌ Port is missing!" });
+      }
+
+      const isServerReady = await checkServerAvailability(port);
+      if (!isServerReady) {
+          return reject({ message: "❌ Llama server is not available" });
+      }
+
+      const llamaSystemPrompt =
+          `You are an AI assistant here to help with programming tasks. ` +
+          `Your responses will be clear, concise, and code-oriented. ` +
+          `Please follow the instructions and generate the requested code.`;
+
+      const api = llamacpp.Api({
+          baseUrl: `http://localhost:${port}`, // ✅ Fixed port usage
+      });
+
+      try {
+          const timeout = 5000;
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+          const textStream = await streamText({
+              signal: controller.signal,
+              model: llamacpp
+                  .CompletionTextGenerator({
+                      api: api,
+                      temperature: temperature,
+                      stopSequences: ["\n```"],
+                  })
+                  .withInstructionPrompt(),
+              prompt: {
+                  system: llamaSystemPrompt,
+                  instruction: prompt,
+                  responsePrefix: `Here is the response:\n`,
+              },
+          });
+
+          let response = "";
+          for await (const textPart of textStream) {
+              process.stdout.write(textPart);
+              response += textPart;
+              if (socket) socket.emit("ai_response", { chunk: textPart });
+          }
+
+          clearTimeout(timeoutId);
+          resolve({
+              status: "success",
+              message: "Response generated successfully",
+              response: response.trim(),
+          });
+      } catch (error) {
+          console.error("❌ Error generating response:", error.message);
+          reject({ message: "Llama Execution Failed", details: error.message });
+      }
+  });
+}
+
 
 // Check if the server is available
 async function checkServerAvailability(port) {
@@ -776,73 +843,13 @@ async function checkServerHealth() {
     } 
 }
 
-async function runLlamaModel({ prompt, model, socket, maxTokens, temperature, topK, nThreads, port = PORT }) { 
-    return new Promise(async (resolve, reject) => {
-        console.log("📝 Running Llama with:", { port, prompt, maxTokens, temperature, topK, nThreads });
-
-        if (!port) {
-            return reject({ message: "❌ Port is missing!" });
-        }
-
-        const isServerReady = await checkServerAvailability(port);
-        if (!isServerReady) {
-            return reject({ message: "❌ Llama server is not available" });
-        }
-
-        const llamaSystemPrompt =
-            `You are an AI assistant here to help with programming tasks. ` +
-            `Your responses will be clear, concise, and code-oriented. ` +
-            `Please follow the instructions and generate the requested code.`;
-
-        const api = llamacpp.Api({
-            baseUrl: `http://localhost:${port}`, // ✅ Fixed port usage
-        });
-
-        try {
-            const timeout = 5000;
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-            const textStream = await streamText({
-                signal: controller.signal,
-                model: llamacpp
-                    .CompletionTextGenerator({
-                        api: api,
-                        temperature: temperature,
-                        stopSequences: ["\n```"],
-                    })
-                    .withInstructionPrompt(),
-                prompt: {
-                    system: llamaSystemPrompt,
-                    instruction: prompt,
-                    responsePrefix: `Here is the response:\n`,
-                },
-            });
-
-            let response = "";
-            for await (const textPart of textStream) {
-                process.stdout.write(textPart);
-                response += textPart;
-                if (socket) socket.emit("ai_response", { chunk: textPart });
-            }
-
-            clearTimeout(timeoutId);
-            resolve({
-                status: "success",
-                message: "Response generated successfully",
-                response: response.trim(),
-            });
-        } catch (error) {
-            console.error("❌ Error generating response:", error.message);
-            reject({ message: "Llama Execution Failed", details: error.message });
-        }
-    });
-}
 
 // Start checking server availability
 checkServerAvailability(PORT);
 
 module.exports = { runLlamaModel, checkServerAvailability, checkServerHealth };
+
+
 // ✅ Middleware for request validation
 const validateRequest = (fields) => (req, res, next) => {
   const missingFields = fields.filter((field) => !req.body[field]);
@@ -936,16 +943,36 @@ app.post("/api/ai/start", async (req, res) => {
 app.post("/api/ai/execute", logRequest, async (req, res) => {
   try {
     const { prompt, task, maxTokens, temperature, topK } = req.body;
+
+    // Validate input
     if (!prompt) {
       return res.status(400).json({ error: "Prompt is required" });
     }
 
+    console.log("Received request:", { prompt, task, maxTokens, temperature, topK });
+
+    // Call AI execution function
     const response = await executeLlama({ prompt, task, maxTokens, temperature, topK });
-    res.json(response);
+
+    // Debug response
+    console.log("AI Response:", response);
+
+    // Ensure response is valid
+    if (!response || Object.keys(response).length === 0) {
+      return res.status(500).json({ error: "AI execution returned an empty response" });
+    }
+
+    res.json({
+      status: "success",
+      message: "Response generated successfully",
+      response: response,
+    });
   } catch (error) {
+    console.error("Execution failed:", error);
     res.status(500).json({ error: "Execution failed", details: error.message });
   }
-});
+}); 
+
 
 app.post("/api/ai/summarize", logRequest, async (req, res) => {
   try {
@@ -988,21 +1015,42 @@ app.post("/api/ai/translate", logRequest, async (req, res) => {
     res.status(500).json({ error: "Translation failed", details: error.message });
   }
 });
-
 app.post("/api/ai/generate-code", logRequest, async (req, res) => {
   try {
-    const { description, language, maxTokens, temperature } = req.body;
+    const { description, language, maxTokens = 100, temperature = 0.7 } = req.body;
+
     if (!description || !language) {
       return res.status(400).json({ error: "Description and language are required" });
     }
 
-    const response = await executeLlama({ prompt: `Write a ${language} function to ${description}`, task: "code", maxTokens, temperature });
-    res.json(response);
+    console.log(`📝 Generating ${language} code for: "${description}"`);
+
+    const result = await executeLlama({ 
+      prompt: `Write a ${language} function to ${description}. Provide well-structured, optimized, and documented code.`,
+      task: "code-generation", 
+      maxTokens, 
+      temperature 
+    });
+
+    if (!result || typeof result.response !== "string") {
+      return res.status(500).json({ error: "Invalid response from AI model" });
+    }
+
+    res.json({ 
+      status: "success",
+      message: "Code generated successfully",
+      language,
+      code: result.response.trim() 
+    });
+
   } catch (error) {
+    console.error("❌ Code generation failed:", error.message);
     res.status(500).json({ error: "Code generation failed", details: error.message });
   }
 });
 
+
+ 
 app.post("/api/ai/chat", logRequest, async (req, res) => {
   try {
     const { message, context, temperature } = req.body;
@@ -1032,6 +1080,65 @@ app.post("/api/ai/generate-sql", logRequest, async (req, res) => {
 });
 
 
+app.post("/api/ai/sentiment", logRequest, async (req, res) => {
+  try {
+    const { text } = req.body;
+    if (!text) {
+      return res.status(400).json({ error: "Text is required" });
+    }
+
+    res.setHeader("Content-Type", "application/json");
+
+    const result = await executeLlama({ 
+      prompt: `Analyze sentiment: "${text}"`, 
+      task: "sentiment-analysis", 
+      maxTokens: 50 
+    });
+
+    if (!result || typeof result.response !== "string") {
+      return res.status(500).json({ error: "Invalid response from AI model" });
+    }
+
+    res.json({ sentiment: result.response });
+
+  } catch (error) {
+    console.error("❌ Sentiment analysis failed:", error.message);
+    res.status(500).json({ error: "Sentiment analysis failed", details: error.message });
+  }
+});
+
+
+
+
+// ✅ AI Data Analysis
+app.post("/api/ai/analyze-data", logRequest, async (req, res) => {
+  try {
+    const { dataset, question } = req.body;
+    if (!dataset || !question) {
+      return res.status(400).json({ error: "Dataset and question are required" });
+    }
+
+    const response = await executeLlama({ prompt: `Analyze this dataset and answer: ${question}\n${JSON.stringify(dataset)}`, task: "data-analysis" });
+    res.json(response);
+  } catch (error) {
+    res.status(500).json({ error: "Data analysis failed", details: error.message });
+  }
+});
+
+// ✅ AI Grammar Check
+app.post("/api/ai/grammar-check", logRequest, async (req, res) => {
+  try {
+    const { text } = req.body;
+    if (!text) {
+      return res.status(400).json({ error: "Text is required" });
+    }
+
+    const response = await executeLlama({ prompt: `Correct the grammar in: ${text}`, task: "grammar-correction" });
+    res.json(response);
+  } catch (error) {
+    res.status(500).json({ error: "Grammar correction failed", details: error.message });
+  }
+});
 // Ensure Express JSON middleware is enabled
 app.use(express.json());
 

@@ -294,7 +294,7 @@
       }
     
   },
-  "/api/ai/execute": {
+ "/api/ai/execute": {
     "post": {
       "tags": ["Llama"],
       "summary": "Execute AI Task", 
@@ -306,11 +306,11 @@
           "schema": {
             "type": "object",
             "properties": {
-              "prompt": { "type": "string" },
-              "task": { "type": "string" },
-              "maxTokens": { "type": "integer" },
-              "temperature": { "type": "number" },
-              "topK": { "type": "integer" }
+              "prompt": { "type": "string", "example": "Generate a Python function to sort an array." },
+              "task": { "type": "string", "example": "code-generation" },
+              "maxTokens": { "type": "integer", "example": 100 },
+              "temperature": { "type": "number", "example": 0.7 },
+              "topK": { "type": "integer", "example": 40 }
             }
           }
         }
@@ -334,9 +334,9 @@
           "schema": {
             "type": "object",
             "properties": {
-              "text": { "type": "string" },
-              "maxTokens": { "type": "integer" },
-              "temperature": { "type": "number" }
+              "text": { "type": "string", "example": "Artificial Intelligence (AI) is the simulation of human intelligence in machines." },
+              "maxTokens": { "type": "integer", "example": 50 },
+              "temperature": { "type": "number", "example": 0.5 }
             }
           }
         }
@@ -360,10 +360,10 @@
           "schema": {
             "type": "object",
             "properties": {
-              "topic": { "type": "string" },
-              "wordCount": { "type": "integer" },
-              "tone": { "type": "string" },
-              "temperature": { "type": "number" }
+              "topic": { "type": "string", "example": "The Future of AI in Healthcare" },
+              "wordCount": { "type": "integer", "example": 500 },
+              "tone": { "type": "string", "example": "informative" },
+              "temperature": { "type": "number", "example": 0.6 }
             }
           }
         }
@@ -387,9 +387,9 @@
           "schema": {
             "type": "object",
             "properties": {
-              "text": { "type": "string" },
-              "sourceLang": { "type": "string" },
-              "targetLang": { "type": "string" }
+              "text": { "type": "string", "example": "Hello, how are you?" },
+              "sourceLang": { "type": "string", "example": "en" },
+              "targetLang": { "type": "string", "example": "es" }
             }
           }
         }
@@ -413,10 +413,10 @@
           "schema": {
             "type": "object",
             "properties": {
-              "description": { "type": "string" },
-              "language": { "type": "string" },
-              "maxTokens": { "type": "integer" },
-              "temperature": { "type": "number" }
+              "description": { "type": "string", "example": "Create a Node.js Express API endpoint." },
+              "language": { "type": "string", "example": "JavaScript" },
+              "maxTokens": { "type": "integer", "example": 150 },
+              "temperature": { "type": "number", "example": 0.8 }
             }
           }
         }
@@ -440,9 +440,9 @@
           "schema": {
             "type": "object",
             "properties": {
-              "message": { "type": "string" },
-              "context": { "type": "string" },
-              "temperature": { "type": "number" }
+              "message": { "type": "string", "example": "What is the capital of France?" },
+              "context": { "type": "string", "example": "General knowledge" },
+              "temperature": { "type": "number", "example": 0.7 }
             }
           }
         }
@@ -453,8 +453,202 @@
         "500": { "description": "Chat response failed" }
       }
     }
-  },
- 
+    },
+ "/api/ai/generate-sql": {
+  "post": {
+    "tags": ["Llama"],
+    "summary": "Generate SQL Query",
+    "parameters": [
+      {
+        "in": "body",
+        "name": "body",
+        "required": true,
+        "schema": {
+          "type": "object",
+          "properties": {
+            "description": { 
+              "type": "string",
+              "example": "Retrieve all users who signed up in the last 30 days"
+            },
+            "databaseType": { 
+              "type": "string",
+              "example": "PostgreSQL"
+            },
+            "temperature": { 
+              "type": "number",
+              "example": 0.7
+            }
+          }
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "SQL query generated",
+        "content": {
+          "application/json": {
+            "example": {
+              "query": "SELECT * FROM users WHERE signup_date >= CURRENT_DATE - INTERVAL '30 days';"
+            }
+          }
+        }
+      },
+      "400": {
+        "description": "Bad Request",
+        "content": {
+          "application/json": {
+            "example": { "error": "Description and databaseType are required" }
+          }
+        }
+      },
+      "500": {
+        "description": "SQL generation failed",
+        "content": {
+          "application/json": {
+            "example": { "error": "SQL generation failed", "details": "Internal server error" }
+          }
+        }
+      }
+    }
+  }
+}
+,   "/api/ai/sentiment": {
+  "post": {
+    "tags": ["Llama"],
+    "summary": "Analyze Sentiment",
+    "parameters": [
+      {
+        "in": "body",
+        "name": "body",
+        "required": true,
+        "schema": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string",
+              "example": "I love this product!"
+            }
+          }
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Sentiment analysis result",
+        "content": {
+          "application/json": {
+            "example": { "sentiment": "positive", "confidence": 0.95 }
+          }
+        }
+      },
+      "400": {
+        "description": "Bad Request",
+        "content": {
+          "application/json": {
+            "example": { "error": "Text is required" }
+          }
+        }
+      },
+      "500": {
+        "description": "Internal Server Error"
+      }
+    }
+  }
+},
+"/api/ai/analyze-data": {
+  "post": {
+    "tags": ["Llama"],
+    "summary": "Analyze Data",
+    "parameters": [
+      {
+        "in": "body",
+        "name": "body",
+        "required": true,
+        "schema": {
+          "type": "object",
+          "properties": {
+            "dataset": {
+              "type": "array",
+              "items": { "type": "object" },
+              "example": [
+                { "product": "Laptop", "sales": 1500 },
+                { "product": "Phone", "sales": 2200 }
+              ]
+            },
+            "question": {
+              "type": "string",
+              "example": "Which product has the highest sales?"
+            }
+          }
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Data analysis result",
+        "content": {
+          "application/json": {
+            "example": { "answer": "Phone has the highest sales with 2200 units." }
+          }
+        }
+      },
+      "400": {
+        "description": "Bad Request",
+        "content": {
+          "application/json": {
+            "example": { "error": "Dataset and question are required" }
+          }
+        }
+      },
+      "500": {
+        "description": "Internal Server Error"
+      }
+    }
+  }
+},
+"/api/ai/grammar-check": {
+  "post": {
+    "tags": ["Llama"],
+    "summary": "Grammar Check",
+    "parameters": [
+      {
+        "in": "body",
+        "name": "body",
+        "required": true,
+        "schema": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string",
+              "example": "She go to the market yesterday."
+            }
+          }
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Grammar correction result",
+        "content": {
+          "application/json": {
+            "example": { "corrected_text": "She went to the market yesterday." }
+          }
+        }
+      },
+      "400": {
+        "description": "Bad Request",
+        "content": {
+          "application/json": {
+            "example": { "error": "Text is required" }
+          }
+        }
+      },
+      "500": {
+        "description": "Internal Server Error"
+      }
+    }
+  }
+},
 
     "/auth/forgot-password": {
       "post": {
