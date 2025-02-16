@@ -1001,6 +1001,62 @@ app.post("/api/ai/generate-blog", logRequest, async (req, res) => {
     res.status(500).json({ error: "Blog generation failed", details: error.message });
   }
 });
+// ✅ AI Image Captioning
+app.post("/api/ai/image-caption", logRequest, async (req, res) => {
+  try {
+    const { imageUrl } = req.body;
+    if (!imageUrl) {
+      return res.status(400).json({ error: "Image URL is required" });
+    }
+
+    const response = await executeLlama({ 
+      prompt: `Describe the content of this image: ${imageUrl}`, 
+      task: "image-captioning" 
+    });
+
+    res.json({ caption: response.response });
+  } catch (error) {
+    res.status(500).json({ error: "Image captioning failed", details: error.message });
+  }
+});
+
+// ✅ AI Keyword Extraction
+app.post("/api/ai/extract-keywords", logRequest, async (req, res) => {
+  try {
+    const { text } = req.body;
+    if (!text) {
+      return res.status(400).json({ error: "Text is required" });
+    }
+
+    const response = await executeLlama({ 
+      prompt: `Extract key topics from: ${text}`, 
+      task: "keyword-extraction" 
+    });
+
+    res.json({ keywords: response.response });
+  } catch (error) {
+    res.status(500).json({ error: "Keyword extraction failed", details: error.message });
+  }
+});
+
+// ✅ AI Paraphrasing
+app.post("/api/ai/paraphrase", logRequest, async (req, res) => {
+  try {
+    const { text, style } = req.body;
+    if (!text) {
+      return res.status(400).json({ error: "Text is required" });
+    }
+
+    const response = await executeLlama({ 
+      prompt: `Paraphrase this text in a ${style || "neutral"} tone: ${text}`, 
+      task: "paraphrasing" 
+    });
+
+    res.json({ paraphrasedText: response.response });
+  } catch (error) {
+    res.status(500).json({ error: "Paraphrasing failed", details: error.message });
+  }
+});
 
 app.post("/api/ai/translate", logRequest, async (req, res) => {
   try {
@@ -1048,7 +1104,7 @@ app.post("/api/ai/generate-code", logRequest, async (req, res) => {
     res.status(500).json({ error: "Code generation failed", details: error.message });
   }
 });
-
+ 
 
  
 app.post("/api/ai/chat", logRequest, async (req, res) => {
@@ -1137,6 +1193,58 @@ app.post("/api/ai/grammar-check", logRequest, async (req, res) => {
     res.json(response);
   } catch (error) {
     res.status(500).json({ error: "Grammar correction failed", details: error.message });
+  }
+});
+
+// Chatbot API
+app.post("/api/ai/chatbot", logRequest, async (req, res) => {
+  try {
+      const { message } = req.body;
+      if (!message) return res.status(400).json({ error: "Message is required" });
+
+      const response = await executeLlama({ prompt: message, task: "chatbot" });
+      res.json(response);
+  } catch (error) {
+      res.status(500).json({ error: "Chatbot request failed", details: error.message });
+  }
+});
+
+// Text to Video API
+app.post("/api/ai/text-to-video", logRequest, async (req, res) => {
+  try {
+      const { text } = req.body;
+      if (!text) return res.status(400).json({ error: "Text is required" });
+
+      const response = await executeLlama({ prompt: text, task: "text-to-video" });
+      res.json(response);
+  } catch (error) {
+      res.status(500).json({ error: "Text-to-video request failed", details: error.message });
+  }
+});
+
+// Video to Text API
+app.post("/api/ai/video-to-text", logRequest, async (req, res) => {
+  try {
+      const { videoUrl } = req.body;
+      if (!videoUrl) return res.status(400).json({ error: "Video URL is required" });
+
+      const response = await executeLlama({ prompt: videoUrl, task: "video-to-text" });
+      res.json(response);
+  } catch (error) {
+      res.status(500).json({ error: "Video-to-text request failed", details: error.message });
+  }
+});
+
+// Voice to Text API
+app.post("/api/ai/voice-to-text", logRequest, async (req, res) => {
+  try {
+      const { audioUrl } = req.body;
+      if (!audioUrl) return res.status(400).json({ error: "Audio URL is required" });
+
+      const response = await executeLlama({ prompt: audioUrl, task: "voice-to-text" });
+      res.json(response);
+  } catch (error) {
+      res.status(500).json({ error: "Voice-to-text request failed", details: error.message });
   }
 });
 // Ensure Express JSON middleware is enabled

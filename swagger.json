@@ -649,7 +649,223 @@
     }
   }
 },
-
+"/api/ai/image-caption": {
+  "post": {
+    "tags": ["Llama"],
+    "summary": "Generate an image caption",
+    "parameters": [
+      {
+        "in": "body",
+        "name": "body",
+        "required": true,
+        "schema": {
+          "type": "object",
+          "properties": {
+            "imageUrl": { "type": "string", "example": "https://example.com/image.jpg" }
+          }
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Caption generated successfully",
+        "content": {
+          "application/json": {
+            "example": { "caption": "A sunset over the ocean with birds flying." }
+          }
+        }
+      },
+      "400": { "description": "Bad Request - Missing imageUrl" },
+      "500": { "description": "Internal Server Error" }
+    }
+  }
+},
+"/api/ai/extract-keywords": {
+  "post": {
+    "tags": ["Llama"],
+    "summary": "Extract keywords from text",
+    "parameters": [
+      {
+        "in": "body",
+        "name": "body",
+        "required": true,
+        "schema": {
+          "type": "object",
+          "properties": {
+            "text": { "type": "string", "example": "Artificial Intelligence is transforming the world." }
+          }
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Keywords extracted successfully",
+        "content": {
+          "application/json": {
+            "example": { "keywords": "Artificial Intelligence, world, transforming" }
+          }
+        }
+      },
+      "400": { "description": "Bad Request - Missing text" },
+      "500": { "description": "Internal Server Error" }
+    }
+  }
+},
+"/api/ai/paraphrase": {
+  "post": {
+    "tags": ["Llama"],
+    "summary": "Paraphrase text",
+    "parameters": [
+      {
+        "in": "body",
+        "name": "body",
+        "required": true,
+        "schema": {
+          "type": "object",
+          "properties": {
+            "text": { "type": "string", "example": "The quick brown fox jumps over the lazy dog." },
+            "style": { "type": "string", "example": "formal", "default": "neutral" }
+          }
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Paraphrased text successfully",
+        "content": {
+          "application/json": {
+            "example": { "paraphrasedText": "The swift auburn fox leaps over the idle hound." }
+          }
+        }
+      },
+      "400": { "description": "Bad Request - Missing text" },
+      "500": { "description": "Internal Server Error" }
+    }
+  }
+},  "/api/ai/chatbot": {
+  "post": {
+    "tags": ["Llama"],
+    "summary": "Chatbot interaction",
+    "parameters": [
+      {
+        "in": "body",
+        "name": "body",
+        "required": true,
+        "schema": {
+          "type": "object",
+          "properties": {
+            "message": { "type": "string", "example": "Hello, how are you?" }
+          }
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Chatbot response",
+        "content": {
+          "application/json": {
+            "example": { "reply": "I'm doing well, thank you!" }
+          }
+        }
+      },
+      "400": { "description": "Bad Request - Missing message" },
+      "500": { "description": "Internal Server Error" }
+    }
+  }
+},
+"/api/ai/text-to-video": {
+  "post": {
+    "tags": ["Llama"],
+    "summary": "Convert text to video",
+    "parameters": [
+      {
+        "in": "body",
+        "name": "body",
+        "required": true,
+        "schema": {
+          "type": "object",
+          "properties": {
+            "text": { "type": "string", "example": "A dog running in a field." }
+          }
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Video generated successfully",
+        "content": {
+          "application/json": {
+            "example": { "videoUrl": "https://example.com/video.mp4" }
+          }
+        }
+      },
+      "400": { "description": "Bad Request - Missing text" },
+      "500": { "description": "Internal Server Error" }
+    }
+  }
+},
+"/api/ai/video-to-text": {
+  "post": {
+    "tags": ["Llama"],
+    "summary": "Extract text from video",
+    "parameters": [
+      {
+        "in": "body",
+        "name": "body",
+        "required": true,
+        "schema": {
+          "type": "object",
+          "properties": {
+            "videoUrl": { "type": "string", "example": "https://example.com/video.mp4" }
+          }
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Extracted text from video",
+        "content": {
+          "application/json": {
+            "example": { "text": "A dog is running in the field." }
+          }
+        }
+      },
+      "400": { "description": "Bad Request - Missing videoUrl" },
+      "500": { "description": "Internal Server Error" }
+    }
+  }
+},
+"/api/ai/voice-to-text": {
+  "post": {
+    "tags": ["Llama"],
+    "summary": "Convert voice to text",
+    "parameters": [
+      {
+        "in": "body",
+        "name": "body",
+        "required": true,
+        "schema": {
+          "type": "object",
+          "properties": {
+            "audioUrl": { "type": "string", "example": "https://example.com/audio.mp3" }
+          }
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Converted text from audio",
+        "content": {
+          "application/json": {
+            "example": { "text": "Hello, how are you?" }
+          }
+        }
+      },
+      "400": { "description": "Bad Request - Missing audioUrl" },
+      "500": { "description": "Internal Server Error" }
+    }
+  } 
+},
     "/auth/forgot-password": {
       "post": {
         "tags": ["Authentication"],
