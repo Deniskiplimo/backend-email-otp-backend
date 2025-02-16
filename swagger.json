@@ -294,6 +294,739 @@
       }
     
   },
+  "/api/social/sentiment-analysis": {
+    "post": {
+      "tags": ["Llama"],
+      "summary": "AI-Powered Sentiment Analysis",
+      "description": "Analyze the sentiment of the given text",
+      "parameters": [
+        {
+          "name": "text",
+          "in": "body",
+          "required": true,
+          "schema": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string",
+                "example": "I love using AI for text analysis!"
+              }
+            }
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Successful sentiment analysis",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "example": "success"
+              },
+              "sentiment": {
+                "type": "string",
+                "example": "positive"
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Bad Request",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "error": {
+                "type": "string",
+                "example": "Text is required"
+              }
+            }
+          }
+        },
+        "500": {
+          "description": "Internal Server Error",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "error": {
+                "type": "string",
+                "example": "Sentiment analysis failed"
+              },
+              "details": {
+                "type": "string",
+                "example": "Error message here"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "/api/social/moderate-comment": {
+    "post": {
+      "tags": ["Llama"],
+      "summary": "AI-Powered Comment Moderation",
+      "description": "Moderate the given comment to approve or reject",
+      "parameters": [
+        {
+          "name": "comment",
+          "in": "body",
+          "required": true,
+          "schema": {
+            "type": "object",
+            "properties": {
+              "comment": {
+                "type": "string",
+                "example": "This is a great article!"
+              }
+            }
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Successful comment moderation",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "example": "success"
+              },
+              "moderation": {
+                "type": "string",
+                "example": "approved"
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Bad Request",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "error": {
+                "type": "string",
+                "example": "Comment is required"
+              }
+            }
+          }
+        },
+        "500": {
+          "description": "Internal Server Error",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "error": {
+                "type": "string",
+                "example": "Comment moderation failed"
+              },
+              "details": {
+                "type": "string",
+                "example": "Error message here"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "/api/social/fake-news-detection": {
+    "post": {
+      "tags": ["Llama"],
+      "summary": "AI-Powered Fake News Detection",
+      "description": "Analyze the article text to detect fake news",
+      "parameters": [
+        {
+          "name": "articleText",
+          "in": "body",
+          "required": true,
+          "schema": {
+            "type": "object",
+            "properties": {
+              "articleText": {
+                "type": "string",
+                "example": "The world is flat and the government is hiding it."
+              }
+            }
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Successful fake news detection",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "example": "success"
+              },
+              "isFake": {
+                "type": "boolean",
+                "example": true
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Bad Request",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "error": {
+                "type": "string",
+                "example": "Article text is required"
+              }
+            }
+          }
+        },
+        "500": {
+          "description": "Internal Server Error",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "error": {
+                "type": "string",
+                "example": "Fake news detection failed"
+              },
+              "details": {
+                "type": "string",
+                "example": "Error message here"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "/api/social/recommend-hashtags": {
+    "post": {
+      "tags": ["Llama"],
+      "summary": "AI-Powered Hashtag Recommendation",
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "content": {
+                  "type": "string",
+                  "description": "The content for hashtag suggestion"
+                }
+              },
+              "required": ["content"]
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Hashtag recommendation success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "example": "success"
+                  },
+                  "hashtags": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "example": ["#AI", "#SocialMedia", "#Tech"]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Bad request - Missing content"
+        },
+        "500": {
+          "description": "Server error"
+        }
+      }
+    }
+  },
+  "/api/social/suggest-post-time": {
+    "post": {
+      "tags": ["Llama"],
+      "summary": "AI-Powered Post Scheduling Suggestion",
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "content": {
+                  "type": "string",
+                  "description": "The content for post time suggestion"
+                },
+                "platform": {
+                  "type": "string",
+                  "description": "The social media platform"
+                }
+              },
+              "required": ["content", "platform"]
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Post time suggestion success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "example": "success"
+                  },
+                  "bestTime": {
+                    "type": "string",
+                    "example": "2025-02-16T14:00:00Z"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Bad request - Missing content or platform"
+        },
+        "500": {
+          "description": "Server error"
+        }
+      }
+    }
+  },
+  "/api/social/auto-reply": {
+    "post": {
+      "tags": ["Llama"],
+      "summary": "AI-Powered Automated Replies",
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "message": {
+                  "type": "string",
+                  "description": "The message to generate a reply for"
+                }
+              },
+              "required": ["message"]
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Auto-reply generation success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "example": "success"
+                  },
+                  "reply": {
+                    "type": "string",
+                    "example": "Thank you for reaching out! I'll get back to you soon."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Bad request - Missing message"
+        },
+        "500": {
+          "description": "Server error"
+        }
+      }
+    }
+  },
+  "/api/social/generate-caption": {
+    "post": {
+      "tags": ["Llama"],
+      "summary": "AI-Powered Image Captioning",
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "imageUrl": {
+                  "type": "string",
+                  "description": "The URL of the image to caption"
+                }
+              },
+              "required": ["imageUrl"]
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Image captioning success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "example": "success"
+                  },
+                  "caption": {
+                    "type": "string",
+                    "example": "A serene landscape at sunset with a calm lake and colorful sky."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Bad request - Missing image URL"
+        },
+        "500": {
+          "description": "Server error"
+        }
+      }
+    }
+  },
+  "/api/social/analyze-trends": {
+    "post": {
+      "tags": ["Llama"],
+      "summary": "AI-Powered Trend Analysis",
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "topic": {
+                  "type": "string",
+                  "description": "The topic for trend analysis"
+                }
+              },
+              "required": ["topic"]
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Trend analysis success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "example": "success"
+                  },
+                  "trends": {
+                    "type": "string",
+                    "example": "AI, Social Media, Trend Analysis"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Bad request - Missing topic"
+        },
+        "500": {
+          "description": "Server error"
+        }
+      }
+    }
+  },    "/api/banking/fraud-detection": {
+    "post": {
+      "tags": ["Llama"],
+      "summary": "AI-Powered Fraud Detection",
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "transactionDetails": {
+                  "type": "string",
+                  "description": "Details of the transaction to analyze for fraud"
+                }
+              },
+              "required": ["transactionDetails"]
+            },
+            "examples": {
+              "fraudulent": {
+                "value": {
+                  "transactionDetails": "Transaction of $5000 to an unknown account from a flagged region."
+                }
+              },
+              "non-fraudulent": {
+                "value": {
+                  "transactionDetails": "Transaction of $200 from a verified account."
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Fraud detection success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "example": "success"
+                  },
+                  "analysis": {
+                    "type": "string",
+                    "example": "Fraudulent transaction detected with confidence score 0.85"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Bad request - Missing transaction details"
+        },
+        "500": {
+          "description": "Server error"
+        }
+      }
+    }
+  },
+  "/api/banking/loan-eligibility": {
+    "post": {
+      "tags": ["Llama"],
+      "summary": "AI-Powered Loan Eligibility Prediction",
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "customerProfile": {
+                  "type": "string",
+                  "description": "The customer profile data for loan eligibility analysis"
+                }
+              },
+              "required": ["customerProfile"]
+            },
+            "examples": {
+              "eligible": {
+                "value": {
+                  "customerProfile": "Customer with a credit score of 750, annual income of $75,000, and stable employment history."
+                }
+              },
+              "ineligible": {
+                "value": {
+                  "customerProfile": "Customer with a credit score of 500, low annual income, and recent defaults."
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Loan eligibility prediction success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "example": "success"
+                  },
+                  "eligibility": {
+                    "type": "string",
+                    "example": "Approved"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Bad request - Missing customer profile data"
+        },
+        "500": {
+          "description": "Server error"
+        }
+      }
+    }
+  },
+  "/api/banking/chatbot": {
+    "post": {
+      "tags": ["Llama"],
+      "summary": "AI-Powered Customer Support Chatbot",
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string",
+                  "description": "The customer query for which a response is needed"
+                }
+              },
+              "required": ["query"]
+            },
+            "examples": {
+              "simple_query": {
+                "value": {
+                  "query": "How can I reset my password?"
+                }
+              },
+              "complex_query": {
+                "value": {
+                  "query": "Can you explain the interest rates for a personal loan?"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Chatbot response success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "example": "success"
+                  },
+                  "response": {
+                    "type": "string",
+                    "example": "You can reset your password by clicking on 'Forgot Password' on the login page."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Bad request - Missing query"
+        },
+        "500": {
+          "description": "Server error"
+        }
+      }
+    }
+  },
+  "/api/analytics/spending-patterns": {
+    "post": {
+      "tags": ["Llama"],
+      "summary": "AI-Powered Spending Pattern Analysis",
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "transactions": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "amount": {
+                        "type": "number",
+                        "description": "Transaction amount"
+                      },
+                      "category": {
+                        "type": "string",
+                        "description": "Transaction category"
+                      }
+                    },
+                    "required": ["amount", "category"]
+                  },
+                  "description": "A list of transaction objects to analyze"
+                }
+              },
+              "required": ["transactions"]
+            },
+            "examples": {
+              "spending_data": {
+                "value": {
+                  "transactions": [
+                    {"amount": 200, "category": "Groceries"},
+                    {"amount": 150, "category": "Dining"},
+                    {"amount": 300, "category": "Electronics"}
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Spending pattern analysis success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "example": "success"
+                  },
+                  "insights": {
+                    "type": "string",
+                    "example": "The user tends to spend heavily on electronics and dining, with moderate grocery expenses."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Bad request - Missing transaction data"
+        },
+        "500": {
+          "description": "Server error"
+        }
+      }
+    }
+  },
  "/api/ai/execute": {
     "post": { 
       "tags": ["Llama"],
