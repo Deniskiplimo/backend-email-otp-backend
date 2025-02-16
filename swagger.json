@@ -295,7 +295,7 @@
     
   },
  "/api/ai/execute": {
-    "post": {
+    "post": { 
       "tags": ["Llama"],
       "summary": "Execute AI Task", 
       "parameters": [

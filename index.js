@@ -937,7 +937,7 @@ app.post("/api/ai/start", async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: "AI Server failed to start", details: error.message });
   }
-});
+}); 
 
 // ✅ AI Execution API
 app.post("/api/ai/execute", logRequest, async (req, res) => {
@@ -973,7 +973,7 @@ app.post("/api/ai/execute", logRequest, async (req, res) => {
   }
 }); 
 
-
+ 
 app.post("/api/ai/summarize", logRequest, async (req, res) => {
   try {
     const { text, maxTokens, temperature } = req.body;
@@ -1009,16 +1009,26 @@ app.post("/api/ai/image-caption", logRequest, async (req, res) => {
       return res.status(400).json({ error: "Image URL is required" });
     }
 
+    console.log("Image URL received:", imageUrl);  // Log the received image URL
+
     const response = await executeLlama({ 
-      prompt: `Describe the content of this image: ${imageUrl}`, 
+      prompt: `Please generate a description of the image found at the following URL: ${imageUrl}`, 
       task: "image-captioning" 
     });
 
+    console.log("AI Model Response:", response);  // Log the response from the AI model
+
+    if (!response || !response.response) {
+      return res.status(500).json({ error: "AI model returned an empty response" });
+    }
+
     res.json({ caption: response.response });
   } catch (error) {
+    console.error("❌ Image captioning failed:", error.message);
     res.status(500).json({ error: "Image captioning failed", details: error.message });
   }
 });
+
 
 // ✅ AI Keyword Extraction
 app.post("/api/ai/extract-keywords", logRequest, async (req, res) => {
@@ -1129,17 +1139,33 @@ app.post("/api/ai/chat", logRequest, async (req, res) => {
 
 app.post("/api/ai/generate-sql", logRequest, async (req, res) => {
   try {
-    const { description, databaseType, temperature } = req.body;
+    const { description, databaseType, temperature = 0.7 } = req.body;
+
     if (!description || !databaseType) {
       return res.status(400).json({ error: "Description and databaseType are required" });
     }
 
-    const response = await executeLlama({ prompt: `Generate a ${databaseType} SQL query for: ${description}`, task: "sql-generation", temperature });
-    res.json(response);
+    const response = await executeLlama({
+      prompt: `Generate a ${databaseType} SQL query that performs the following task: ${description}`,
+      task: "sql-generation",
+      temperature
+    });
+
+    // Check if response is empty or invalid
+    if (!response || !response.response || !response.response.trim()) {
+      return res.status(500).json({
+        error: "AI model returned an empty response",
+        details: "The AI model didn't generate any SQL query for the given prompt."
+      });
+    }
+
+    res.json(response); // Return the AI model response
   } catch (error) {
+    console.error("❌ SQL generation failed:", error.message);
     res.status(500).json({ error: "SQL generation failed", details: error.message });
   }
 });
+
 
 
 // ✅ Sentiment Analysis Route
@@ -1223,42 +1249,52 @@ app.post("/api/ai/chatbot", logRequest, async (req, res) => {
 
 app.post("/api/ai/text-to-video", logRequest, async (req, res) => {
   try {
-      const { text } = req.body;
-      if (!text) return res.status(400).json({ error: "Text is required" });
+    const { text } = req.body;
+    if (!text) return res.status(400).json({ error: "Text is required" });
 
-      const prompt = `Generate a video based on the following description:\n"${text}"\nThe video should be visually descriptive and relevant to the text.`;
-      console.log("Generated Prompt:", prompt);
+    const prompt = `Generate exactly one video based on the following description:\n"${text}"\nProvide only one video description, and do not include any additional video descriptions.`;
+    console.log("Generated Prompt:", prompt);
 
-      const response = await executeLlama({ prompt, task: "text-to-video" });
-      console.log("Llama Response:", response);
+    const response = await executeLlama({
+      prompt,
+      task: "text-to-video",
+      n: 1, // Ensure only one video description is generated
+      maxTokens: 256,
+      temperature: 0.7,
+      topK: 50,
+      nThreads: 3
+    });
 
-      // Extract video details
-      if (!response || !response.response || response.response.trim() === "") {
-          return res.status(500).json({ error: "Failed to generate video", details: response });
-      }
+    console.log("Llama Response:", response);
 
-      // Assume the response contains a description rather than a URL
-      const videoDescription = response.response; 
+    // Check if the response is valid
+    if (!response || !response.response || response.response.trim() === "") {
+      return res.status(500).json({ error: "Failed to generate video", details: response });
+    }
 
-      // Define the file path to save the video description
-      const filePath = path.join(__dirname, "generated_videos", `video_${Date.now()}.txt`);
+    // Ensure only one video description is returned (take the first one)
+    const videoDescriptions = response.response.trim().split("\n");
+    const videoDescription = videoDescriptions[0]; // Use only the first description
 
-      // Ensure the directory exists
-      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    // Define the file path to save the video description
+    const filePath = path.join(__dirname, "generated_videos", `video_${Date.now()}.txt`);
 
-      // Save the video description to a text file
-      fs.writeFileSync(filePath, videoDescription, "utf8");
+    // Ensure the directory exists
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
 
-      res.json({
-          status: "success",
-          message: "Video description generated successfully and saved locally",
-          videoDescription,
-          savedPath: filePath
-      });
+    // Save the video description to a text file
+    fs.writeFileSync(filePath, videoDescription, "utf8");
+
+    res.json({
+      status: "success",
+      message: "Video description generated successfully and saved locally",
+      videoDescription,
+      savedPath: filePath
+    });
 
   } catch (error) {
-      console.error("Error in text-to-video:", error);
-      res.status(500).json({ error: "Text-to-video request failed", details: error.message });
+    console.error("Error in text-to-video:", error);
+    res.status(500).json({ error: "Text-to-video request failed", details: error.message });
   }
 });
 

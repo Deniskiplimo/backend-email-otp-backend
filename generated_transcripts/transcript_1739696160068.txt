@@ -1,0 +1,32 @@
+Transcript: 
+
+Video Title: Creating a Custom Android App with Kotlin and Firebase Realtime Database
+
+Introduction:
+Welcome to this tutorial on creating a custom Android app with Kotlin and Firebase Realtime Database. In this course, we’ll learn how to create a basic app that stores user data in the cloud and access it from anywhere via the Firebase console. We’ll also cover topics such as database creation, synchronization, and security.
+
+Step 1: Creating a Kotlin Project
+
+Let's start by creating a new project. Open your Android Studio and click on “New” > “New Module”. In this example, we will create a “Home” module. Click the “Next” button and select “Kotlin Module”. Give your project a name, such as “MyApp”, and navigate to the directory where you want to store your app source code.
+
+Step 2: Creating a Realtime Database
+
+Next, let's create our database. Navigate to the Firebase Console and click on “Create Project” in the bottom menu bar. Enter a unique name for your project (e.g., “MyApp”), choose a location (e.g., “US” or “World”), and select “No Database”.
+
+Step 3: Creating Users and Data
+
+In our first screen, we’ll add users to the app. Navigate back to your “Home” module in Android Studio and click on the “Database” button (located under “Project Settings”). Click on “Create a database reference” to create a new node for our user data. Enter a unique name for the reference and click “Next”.
+
+Step 4: Adding Data to the Database
+
+Now that we have created our users, let's add some data to them. Click on the “Database” button again (located under “Project Settings”), and click on “Create a child reference”. Enter a unique name for the reference and select “Value”. Now enter your user’s data such as name, email, password, and other details in this reference.
+
+Step 5: Adding Data to Users
+
+Now that we have created our users and added some data, let's update them with new data. Click on the “Database” button again (located under “Project Settings”), and click on “Create a child reference”. Enter a unique name for the reference and select “Value”. Now enter your user’s new data such as name, email, password, and other details in this reference.
+
+Step 6: Testing Your Database
+
+Finally, let's test our database. Click on the “Database” button (located under “Project Settings”), navigate to “My Project”, click on "Data Sources", and add your database reference as a data source. Now you can fetch data from our database and store it in your app.
+
+That's it! Your Firebase project is now ready to use. Start building your app today!
