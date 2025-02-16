@@ -501,27 +501,22 @@
       }
     }
   },
-  "/api/social/recommend-hashtags": {
+"/api/social/recommend-hashtags": {
     "post": {
       "tags": ["Llama"],
       "summary": "AI-Powered Hashtag Recommendation",
-      "requestBody": {
-        "required": true,
-        "content": {
-          "application/json": {
-            "schema": {
-              "type": "object",
-              "properties": {
-                "content": {
-                  "type": "string",
-                  "description": "The content for hashtag suggestion"
-                }
-              },
-              "required": ["content"]
-            }
-          }
+      "parameters": [
+        {
+          "name": "content",
+          "in": "query",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "example": "Exploring the latest advancements in artificial intelligence and machine learning."
+          },
+          "description": "The content for hashtag suggestion"
         }
-      },
+      ],
       "responses": {
         "200": {
           "description": "Hashtag recommendation success",
@@ -536,10 +531,8 @@
                   },
                   "hashtags": {
                     "type": "array",
-                    "items": {
-                      "type": "string"
-                    },
-                    "example": ["#AI", "#SocialMedia", "#Tech"]
+                    "items": { "type": "string" },
+                    "example": ["#AI", "#MachineLearning", "#TechTrends"]
                   }
                 }
               }
@@ -555,82 +548,22 @@
       }
     }
   },
-  "/api/social/suggest-post-time": {
-    "post": {
-      "tags": ["Llama"],
-      "summary": "AI-Powered Post Scheduling Suggestion",
-      "requestBody": {
-        "required": true,
-        "content": {
-          "application/json": {
-            "schema": {
-              "type": "object",
-              "properties": {
-                "content": {
-                  "type": "string",
-                  "description": "The content for post time suggestion"
-                },
-                "platform": {
-                  "type": "string",
-                  "description": "The social media platform"
-                }
-              },
-              "required": ["content", "platform"]
-            }
-          }
-        }
-      },
-      "responses": {
-        "200": {
-          "description": "Post time suggestion success",
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "status": {
-                    "type": "string",
-                    "example": "success"
-                  },
-                  "bestTime": {
-                    "type": "string",
-                    "example": "2025-02-16T14:00:00Z"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "400": {
-          "description": "Bad request - Missing content or platform"
-        },
-        "500": {
-          "description": "Server error"
-        }
-      }
-    }
-  },
   "/api/social/auto-reply": {
     "post": {
       "tags": ["Llama"],
       "summary": "AI-Powered Automated Replies",
-      "requestBody": {
-        "required": true,
-        "content": {
-          "application/json": {
-            "schema": {
-              "type": "object",
-              "properties": {
-                "message": {
-                  "type": "string",
-                  "description": "The message to generate a reply for"
-                }
-              },
-              "required": ["message"]
-            }
-          }
+      "parameters": [
+        {
+          "name": "message",
+          "in": "query",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "example": "Hello, how are you?"
+          },
+          "description": "The message to generate a reply for"
         }
-      },
+      ],
       "responses": {
         "200": {
           "description": "Auto-reply generation success",
@@ -652,12 +585,8 @@
             }
           }
         },
-        "400": {
-          "description": "Bad request - Missing message"
-        },
-        "500": {
-          "description": "Server error"
-        }
+        "400": { "description": "Bad request - Missing message" },
+        "500": { "description": "Server error" }
       }
     }
   },
@@ -665,23 +594,18 @@
     "post": {
       "tags": ["Llama"],
       "summary": "AI-Powered Image Captioning",
-      "requestBody": {
-        "required": true,
-        "content": {
-          "application/json": {
-            "schema": {
-              "type": "object",
-              "properties": {
-                "imageUrl": {
-                  "type": "string",
-                  "description": "The URL of the image to caption"
-                }
-              },
-              "required": ["imageUrl"]
-            }
-          }
-        }
-      },
+      "parameters": [
+        {
+          "name": "imageUrl",
+          "in": "query",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "example": "https://images.app.goo.gl/QZiAubbaY5fXt51r9"
+          },
+          "description": "The URL of the image to caption"
+        } 
+      ],
       "responses": {
         "200": {
           "description": "Image captioning success",
@@ -703,12 +627,8 @@
             }
           }
         },
-        "400": {
-          "description": "Bad request - Missing image URL"
-        },
-        "500": {
-          "description": "Server error"
-        }
+        "400": { "description": "Bad request - Missing image URL" },
+        "500": { "description": "Server error" }
       }
     }
   },
@@ -716,23 +636,18 @@
     "post": {
       "tags": ["Llama"],
       "summary": "AI-Powered Trend Analysis",
-      "requestBody": {
-        "required": true,
-        "content": {
-          "application/json": {
-            "schema": {
-              "type": "object",
-              "properties": {
-                "topic": {
-                  "type": "string",
-                  "description": "The topic for trend analysis"
-                }
-              },
-              "required": ["topic"]
-            }
-          }
+      "parameters": [
+        {
+          "name": "topic",
+          "in": "query",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "example": "AI Technology"
+          },
+          "description": "The topic for trend analysis"
         }
-      },
+      ],
       "responses": {
         "200": {
           "description": "Trend analysis success",
@@ -754,276 +669,8 @@
             }
           }
         },
-        "400": {
-          "description": "Bad request - Missing topic"
-        },
-        "500": {
-          "description": "Server error"
-        }
-      }
-    }
-  },    "/api/banking/fraud-detection": {
-    "post": {
-      "tags": ["Llama"],
-      "summary": "AI-Powered Fraud Detection",
-      "requestBody": {
-        "required": true,
-        "content": {
-          "application/json": {
-            "schema": {
-              "type": "object",
-              "properties": {
-                "transactionDetails": {
-                  "type": "string",
-                  "description": "Details of the transaction to analyze for fraud"
-                }
-              },
-              "required": ["transactionDetails"]
-            },
-            "examples": {
-              "fraudulent": {
-                "value": {
-                  "transactionDetails": "Transaction of $5000 to an unknown account from a flagged region."
-                }
-              },
-              "non-fraudulent": {
-                "value": {
-                  "transactionDetails": "Transaction of $200 from a verified account."
-                }
-              }
-            }
-          }
-        }
-      },
-      "responses": {
-        "200": {
-          "description": "Fraud detection success",
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "status": {
-                    "type": "string",
-                    "example": "success"
-                  },
-                  "analysis": {
-                    "type": "string",
-                    "example": "Fraudulent transaction detected with confidence score 0.85"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "400": {
-          "description": "Bad request - Missing transaction details"
-        },
-        "500": {
-          "description": "Server error"
-        }
-      }
-    }
-  },
-  "/api/banking/loan-eligibility": {
-    "post": {
-      "tags": ["Llama"],
-      "summary": "AI-Powered Loan Eligibility Prediction",
-      "requestBody": {
-        "required": true,
-        "content": {
-          "application/json": {
-            "schema": {
-              "type": "object",
-              "properties": {
-                "customerProfile": {
-                  "type": "string",
-                  "description": "The customer profile data for loan eligibility analysis"
-                }
-              },
-              "required": ["customerProfile"]
-            },
-            "examples": {
-              "eligible": {
-                "value": {
-                  "customerProfile": "Customer with a credit score of 750, annual income of $75,000, and stable employment history."
-                }
-              },
-              "ineligible": {
-                "value": {
-                  "customerProfile": "Customer with a credit score of 500, low annual income, and recent defaults."
-                }
-              }
-            }
-          }
-        }
-      },
-      "responses": {
-        "200": {
-          "description": "Loan eligibility prediction success",
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "status": {
-                    "type": "string",
-                    "example": "success"
-                  },
-                  "eligibility": {
-                    "type": "string",
-                    "example": "Approved"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "400": {
-          "description": "Bad request - Missing customer profile data"
-        },
-        "500": {
-          "description": "Server error"
-        }
-      }
-    }
-  },
-  "/api/banking/chatbot": {
-    "post": {
-      "tags": ["Llama"],
-      "summary": "AI-Powered Customer Support Chatbot",
-      "requestBody": {
-        "required": true,
-        "content": {
-          "application/json": {
-            "schema": {
-              "type": "object",
-              "properties": {
-                "query": {
-                  "type": "string",
-                  "description": "The customer query for which a response is needed"
-                }
-              },
-              "required": ["query"]
-            },
-            "examples": {
-              "simple_query": {
-                "value": {
-                  "query": "How can I reset my password?"
-                }
-              },
-              "complex_query": {
-                "value": {
-                  "query": "Can you explain the interest rates for a personal loan?"
-                }
-              }
-            }
-          }
-        }
-      },
-      "responses": {
-        "200": {
-          "description": "Chatbot response success",
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "status": {
-                    "type": "string",
-                    "example": "success"
-                  },
-                  "response": {
-                    "type": "string",
-                    "example": "You can reset your password by clicking on 'Forgot Password' on the login page."
-                  }
-                }
-              }
-            }
-          }
-        },
-        "400": {
-          "description": "Bad request - Missing query"
-        },
-        "500": {
-          "description": "Server error"
-        }
-      }
-    }
-  },
-  "/api/analytics/spending-patterns": {
-    "post": {
-      "tags": ["Llama"],
-      "summary": "AI-Powered Spending Pattern Analysis",
-      "requestBody": {
-        "required": true,
-        "content": {
-          "application/json": {
-            "schema": {
-              "type": "object",
-              "properties": {
-                "transactions": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "amount": {
-                        "type": "number",
-                        "description": "Transaction amount"
-                      },
-                      "category": {
-                        "type": "string",
-                        "description": "Transaction category"
-                      }
-                    },
-                    "required": ["amount", "category"]
-                  },
-                  "description": "A list of transaction objects to analyze"
-                }
-              },
-              "required": ["transactions"]
-            },
-            "examples": {
-              "spending_data": {
-                "value": {
-                  "transactions": [
-                    {"amount": 200, "category": "Groceries"},
-                    {"amount": 150, "category": "Dining"},
-                    {"amount": 300, "category": "Electronics"}
-                  ]
-                }
-              }
-            }
-          }
-        }
-      },
-      "responses": {
-        "200": {
-          "description": "Spending pattern analysis success",
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "status": {
-                    "type": "string",
-                    "example": "success"
-                  },
-                  "insights": {
-                    "type": "string",
-                    "example": "The user tends to spend heavily on electronics and dining, with moderate grocery expenses."
-                  }
-                }
-              }
-            }
-          }
-        },
-        "400": {
-          "description": "Bad request - Missing transaction data"
-        },
-        "500": {
-          "description": "Server error"
-        }
+        "400": { "description": "Bad request - Missing topic" },
+        "500": { "description": "Server error" }
       }
     }
   },

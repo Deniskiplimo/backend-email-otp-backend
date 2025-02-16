@@ -973,7 +973,7 @@ app.post("/api/ai/execute", logRequest, async (req, res) => {
   }
 }); 
 
- 
+  
 app.post("/api/ai/summarize", logRequest, async (req, res) => {
   try {
     const { text, maxTokens, temperature } = req.body;
@@ -1001,7 +1001,6 @@ app.post("/api/ai/generate-blog", logRequest, async (req, res) => {
     res.status(500).json({ error: "Blog generation failed", details: error.message });
   }
 });
-// ✅ AI Image Captioning
 app.post("/api/ai/image-caption", logRequest, async (req, res) => {
   try {
     const { imageUrl } = req.body;
@@ -1009,26 +1008,34 @@ app.post("/api/ai/image-caption", logRequest, async (req, res) => {
       return res.status(400).json({ error: "Image URL is required" });
     }
 
-    console.log("Image URL received:", imageUrl);  // Log the received image URL
+    console.log("🔍 Received image URL:", imageUrl);
 
-    const response = await executeLlama({ 
-      prompt: `Please generate a description of the image found at the following URL: ${imageUrl}`, 
-      task: "image-captioning" 
-    });
-
-    console.log("AI Model Response:", response);  // Log the response from the AI model
-
-    if (!response || !response.response) {
-      return res.status(500).json({ error: "AI model returned an empty response" });
+    // Debug: Ensure executeLlama is properly called
+    let response;
+    try {
+      response = await executeLlama({
+        prompt: `Describe the content of this image: ${imageUrl}.`,
+        task: "image-captioning",
+      });
+    } catch (aiError) {
+      console.error("❌ AI Execution Error:", aiError);
+      return res.status(500).json({ error: "AI execution failed", details: aiError.message });
     }
 
-    res.json({ caption: response.response });
+    console.log("🤖 AI Model Raw Response:", response);
+
+    // Ensure valid AI response
+    if (!response || typeof response.response !== "string" || response.response.trim() === "") {
+      console.error("❌ AI returned an invalid response:", response);
+      return res.status(500).json({ error: "AI model returned an invalid response" });
+    }
+
+    res.json({ status: "success", caption: response.response.trim() });
   } catch (error) {
-    console.error("❌ Image captioning failed:", error.message);
+    console.error("❌ Image captioning failed:", error);
     res.status(500).json({ error: "Image captioning failed", details: error.message });
   }
 });
-
 
 // ✅ AI Keyword Extraction
 app.post("/api/ai/extract-keywords", logRequest, async (req, res) => {
@@ -1165,8 +1172,6 @@ app.post("/api/ai/generate-sql", logRequest, async (req, res) => {
     res.status(500).json({ error: "SQL generation failed", details: error.message });
   }
 });
-
-
 
 // ✅ Sentiment Analysis Route
 app.post("/api/ai/sentiment", async (req, res) => {
@@ -1397,16 +1402,30 @@ app.post("/api/social/sentiment-analysis", async (req, res) => {
 app.post("/api/social/moderate-comment", async (req, res) => {
   try {
     const { comment } = req.body;
-    if (!comment) return res.status(400).json({ error: "Comment is required" });
+    if (!comment || typeof comment !== "string") {
+      return res.status(400).json({ error: "Valid comment is required" });
+    }
 
-    const prompt = `Moderate comment: "${comment}". Reply 'approved' or 'rejected'.`;
+    const prompt = `Moderate the following comment strictly based on community guidelines. 
+    If it's acceptable, reply only 'approved'. If it's not, reply 'rejected' and briefly state the reason. 
+    Comment: "${comment}"`;
+
     const response = await executeLlama({ prompt, task: "moderation" });
-    res.json({ status: "success", moderation: response.response.trim() });
+    const moderationResult = response.response.trim().toLowerCase();
+
+    if (moderationResult.startsWith("approved")) {
+      return res.json({ status: "success", moderation: "approved" });
+    } else if (moderationResult.startsWith("rejected")) {
+      const reason = moderationResult.replace("rejected", "").trim();
+      return res.json({ status: "success", moderation: "rejected", reason: reason || "Violates community guidelines" });
+    } else {
+      return res.status(500).json({ error: "Unexpected AI response", details: moderationResult });
+    }
   } catch (error) {
     res.status(500).json({ error: "Comment moderation failed", details: error.message });
   }
 });
-
+ 
 // AI-Powered Fake News Detection
 app.post("/api/social/fake-news-detection", async (req, res) => {
   try {
@@ -1424,13 +1443,27 @@ app.post("/api/social/fake-news-detection", async (req, res) => {
 // AI-Powered Hashtag Recommendation
 app.post("/api/social/recommend-hashtags", async (req, res) => {
   try {
-    const { content } = req.body;
-    if (!content) return res.status(400).json({ error: "Content is required" });
+    // Accept content from either query params or body
+    const content = req.body.content || req.query.content;
+    if (!content) {
+      return res.status(400).json({ error: "Content is required" });
+    }
 
-    const prompt = `Suggest three hashtags for: "${content}".`;
+    const prompt = `Suggest three relevant hashtags for: "${content}".`;
+    
+    // Ensure `executeLlama` runs properly
     const response = await executeLlama({ prompt, task: "hashtag-recommendation" });
-    res.json({ status: "success", hashtags: response.response.trim().split(", ") });
+
+    if (!response || !response.response) {
+      throw new Error("Invalid response from AI model");
+    }
+
+    // Parse and sanitize hashtags
+    let hashtags = response.response.trim().split(/,\s*/).map(tag => tag.startsWith("#") ? tag : `#${tag}`);
+
+    res.json({ status: "success", hashtags });
   } catch (error) {
+    console.error("Hashtag recommendation error:", error);
     res.status(500).json({ error: "Hashtag recommendation failed", details: error.message });
   }
 });
@@ -1438,13 +1471,23 @@ app.post("/api/social/recommend-hashtags", async (req, res) => {
 // AI-Powered Post Scheduling Suggestion
 app.post("/api/social/suggest-post-time", async (req, res) => {
   try {
-    const { content, platform } = req.body;
-    if (!content || !platform) return res.status(400).json({ error: "Content and platform are required" });
+    const content = req.body.content || req.query.content;
+    const platform = req.body.platform || req.query.platform;
+
+    if (!content || !platform) {
+      return res.status(400).json({ error: "Content and platform are required" });
+    }
 
     const prompt = `Suggest the best posting time on ${platform} for: "${content}".`;
     const response = await executeLlama({ prompt, task: "post-scheduling" });
+
+    if (!response || !response.response) {
+      throw new Error("Invalid response from AI model");
+    }
+
     res.json({ status: "success", bestTime: response.response.trim() });
   } catch (error) {
+    console.error("Post scheduling error:", error);
     res.status(500).json({ error: "Post scheduling suggestion failed", details: error.message });
   }
 });
@@ -1452,13 +1495,22 @@ app.post("/api/social/suggest-post-time", async (req, res) => {
 // AI-Powered Automated Replies
 app.post("/api/social/auto-reply", async (req, res) => {
   try {
-    const { message } = req.body;
-    if (!message) return res.status(400).json({ error: "Message is required" });
+    const message = req.body.message || req.query.message;
+
+    if (!message) {
+      return res.status(400).json({ error: "Message is required" });
+    }
 
     const prompt = `Generate a reply to: "${message}".`;
     const response = await executeLlama({ prompt, task: "auto-reply" });
+
+    if (!response || !response.response) {
+      throw new Error("Invalid response from AI model");
+    }
+
     res.json({ status: "success", reply: response.response.trim() });
   } catch (error) {
+    console.error("Auto-reply error:", error);
     res.status(500).json({ error: "Auto-reply generation failed", details: error.message });
   }
 });
@@ -1466,13 +1518,22 @@ app.post("/api/social/auto-reply", async (req, res) => {
 // AI-Powered Image Captioning
 app.post("/api/social/generate-caption", async (req, res) => {
   try {
-    const { imageUrl } = req.body;
-    if (!imageUrl) return res.status(400).json({ error: "Image URL is required" });
+    const imageUrl = req.body.imageUrl || req.query.imageUrl;
+
+    if (!imageUrl) {
+      return res.status(400).json({ error: "Image URL is required" });
+    }
 
     const prompt = `Describe this image: "${imageUrl}".`;
     const response = await executeLlama({ prompt, task: "image-captioning" });
+
+    if (!response || !response.response) {
+      throw new Error("Invalid response from AI model");
+    }
+
     res.json({ status: "success", caption: response.response.trim() });
   } catch (error) {
+    console.error("Image captioning error:", error);
     res.status(500).json({ error: "Image captioning failed", details: error.message });
   }
 });
@@ -1480,28 +1541,45 @@ app.post("/api/social/generate-caption", async (req, res) => {
 // AI-Powered Trend Analysis
 app.post("/api/social/analyze-trends", async (req, res) => {
   try {
-    const { topic } = req.body;
-    if (!topic) return res.status(400).json({ error: "Topic is required" });
+    const topic = req.body.topic || req.query.topic;
+
+    if (!topic) {
+      return res.status(400).json({ error: "Topic is required" });
+    }
 
     const prompt = `Analyze social media trends on: "${topic}".`;
     const response = await executeLlama({ prompt, task: "trend-analysis" });
+
+    if (!response || !response.response) {
+      throw new Error("Invalid response from AI model");
+    }
+
     res.json({ status: "success", trends: response.response.trim() });
   } catch (error) {
+    console.error("Trend analysis error:", error);
     res.status(500).json({ error: "Trend analysis failed", details: error.message });
   }
 });
+
 // AI-Powered Credit Score Estimation
 app.post("/api/banking/credit-score", async (req, res) => {
   try {
-    const { financialHistory } = req.body;
-    if (!financialHistory) return res.status(400).json({ error: "Financial history data is required" });
+    const financialHistory = req.body.financialHistory;
 
-    const prompt = `Estimate the credit score based on this financial history: "${JSON.stringify(financialHistory)}". Provide a score out of 850.`;
+    if (!financialHistory) {
+      return res.status(400).json({ error: "Financial history data is required" });
+    }
+
+    const prompt = `Estimate the credit score based on this financial history: ${JSON.stringify(financialHistory)}. Provide a score out of 850.`;
     const response = await executeLlama({ prompt, task: "credit-score-estimation" });
 
-    res.json({ status: "success", creditScore: response.response.trim() });
+    if (!response || !response.response) {
+      throw new Error("Invalid response from AI model");
+    }
 
+    res.json({ status: "success", creditScore: response.response.trim() });
   } catch (error) {
+    console.error("Credit score estimation error:", error);
     res.status(500).json({ error: "Credit score estimation failed", details: error.message });
   }
 });
@@ -1509,18 +1587,26 @@ app.post("/api/banking/credit-score", async (req, res) => {
 // AI-Powered Post Optimization
 app.post("/api/social/optimal-post-time", async (req, res) => {
   try {
-    const { userActivityData } = req.body;
-    if (!userActivityData) return res.status(400).json({ error: "User activity data is required" });
+    const userActivityData = req.body.userActivityData;
 
-    const prompt = `Analyze this user activity data: "${JSON.stringify(userActivityData)}". Suggest the best time to post for maximum engagement.`;
+    if (!userActivityData) {
+      return res.status(400).json({ error: "User activity data is required" });
+    }
+
+    const prompt = `Analyze this user activity data: ${JSON.stringify(userActivityData)}. Suggest the best time to post for maximum engagement.`;
     const response = await executeLlama({ prompt, task: "post-optimization" });
 
-    res.json({ status: "success", bestTime: response.response.trim() });
+    if (!response || !response.response) {
+      throw new Error("Invalid response from AI model");
+    }
 
+    res.json({ status: "success", bestTime: response.response.trim() });
   } catch (error) {
+    console.error("Post optimization error:", error);
     res.status(500).json({ error: "Post optimization failed", details: error.message });
   }
 });
+ 
 
 // AI-Powered Fake News Detection
 app.post("/api/social/fake-news-detection", async (req, res) => {
