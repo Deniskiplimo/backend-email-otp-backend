@@ -1039,7 +1039,6 @@ app.post("/api/ai/extract-keywords", logRequest, async (req, res) => {
   }
 });
 
-// ✅ AI Paraphrasing
 app.post("/api/ai/paraphrase", logRequest, async (req, res) => {
   try {
     const { text, style } = req.body;
@@ -1047,16 +1046,23 @@ app.post("/api/ai/paraphrase", logRequest, async (req, res) => {
       return res.status(400).json({ error: "Text is required" });
     }
 
-    const response = await executeLlama({ 
-      prompt: `Paraphrase this text in a ${style || "neutral"} tone: ${text}`, 
-      task: "paraphrasing" 
-    });
+    const prompt = `Task: Paraphrase the following text in a ${style || "neutral"} tone.\nText: "${text}"\nParaphrased Output:`;
+    console.log("Generated Prompt:", prompt);
 
-    res.json({ paraphrasedText: response.response });
+    const response = await executeLlama({ prompt, task: "paraphrasing" });
+    console.log("Llama Response:", response);
+
+    if (!response || !response.response || response.response.trim() === "") {
+      return res.status(500).json({ error: "Failed to paraphrase", details: response });
+    }
+
+    res.json({ paraphrasedText: response.response.trim() });
   } catch (error) {
+    console.error("Error in paraphrasing:", error);
     res.status(500).json({ error: "Paraphrasing failed", details: error.message });
   }
 });
+ 
 
 app.post("/api/ai/translate", logRequest, async (req, res) => {
   try {
@@ -1136,7 +1142,8 @@ app.post("/api/ai/generate-sql", logRequest, async (req, res) => {
 });
 
 
-app.post("/api/ai/sentiment", logRequest, async (req, res) => {
+// ✅ Sentiment Analysis Route
+app.post("/api/ai/sentiment", async (req, res) => {
   try {
     const { text } = req.body;
     if (!text) {
@@ -1145,23 +1152,28 @@ app.post("/api/ai/sentiment", logRequest, async (req, res) => {
 
     res.setHeader("Content-Type", "application/json");
 
+    // 🔥 Improved prompt for better results
+    const prompt = `Classify the sentiment of the following text as Positive, Negative, or Neutral: "${text}"`;
+
     const result = await executeLlama({ 
-      prompt: `Analyze sentiment: "${text}"`, 
-      task: "sentiment-analysis", 
+      prompt,
       maxTokens: 50 
     });
+
+    console.log("🔍 AI Response:", result); // Debugging
 
     if (!result || typeof result.response !== "string") {
       return res.status(500).json({ error: "Invalid response from AI model" });
     }
 
-    res.json({ sentiment: result.response });
+    res.json({ sentiment: result.response.trim() });
 
   } catch (error) {
     console.error("❌ Sentiment analysis failed:", error.message);
     res.status(500).json({ error: "Sentiment analysis failed", details: error.message });
   }
 });
+
 
 
 
@@ -1209,28 +1221,83 @@ app.post("/api/ai/chatbot", logRequest, async (req, res) => {
   }
 });
 
-// Text to Video API
 app.post("/api/ai/text-to-video", logRequest, async (req, res) => {
   try {
       const { text } = req.body;
       if (!text) return res.status(400).json({ error: "Text is required" });
 
-      const response = await executeLlama({ prompt: text, task: "text-to-video" });
-      res.json(response);
+      const prompt = `Generate a video based on the following description:\n"${text}"\nThe video should be visually descriptive and relevant to the text.`;
+      console.log("Generated Prompt:", prompt);
+
+      const response = await executeLlama({ prompt, task: "text-to-video" });
+      console.log("Llama Response:", response);
+
+      // Extract video details
+      if (!response || !response.response || response.response.trim() === "") {
+          return res.status(500).json({ error: "Failed to generate video", details: response });
+      }
+
+      // Assume the response contains a description rather than a URL
+      const videoDescription = response.response; 
+
+      // Define the file path to save the video description
+      const filePath = path.join(__dirname, "generated_videos", `video_${Date.now()}.txt`);
+
+      // Ensure the directory exists
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+
+      // Save the video description to a text file
+      fs.writeFileSync(filePath, videoDescription, "utf8");
+
+      res.json({
+          status: "success",
+          message: "Video description generated successfully and saved locally",
+          videoDescription,
+          savedPath: filePath
+      });
+
   } catch (error) {
+      console.error("Error in text-to-video:", error);
       res.status(500).json({ error: "Text-to-video request failed", details: error.message });
   }
 });
 
-// Video to Text API
 app.post("/api/ai/video-to-text", logRequest, async (req, res) => {
   try {
       const { videoUrl } = req.body;
       if (!videoUrl) return res.status(400).json({ error: "Video URL is required" });
 
-      const response = await executeLlama({ prompt: videoUrl, task: "video-to-text" });
-      res.json(response);
+      const prompt = `Transcribe the following video:\n"${videoUrl}"\nExtract spoken content and return a detailed transcript.`;
+      console.log("Generated Prompt:", prompt);
+
+      const response = await executeLlama({ prompt, task: "video-to-text" });
+      console.log("Llama Response:", response);
+
+      // Extract the transcript
+      if (!response || !response.response || response.response.trim() === "") {
+          return res.status(500).json({ error: "Failed to transcribe video", details: response });
+      }
+
+      const transcript = response.response;
+
+      // Define the file path to save the transcript
+      const filePath = path.join(__dirname, "generated_transcripts", `transcript_${Date.now()}.txt`);
+
+      // Ensure the directory exists
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+
+      // Save the transcript to a text file
+      fs.writeFileSync(filePath, transcript, "utf8");
+
+      res.json({
+          status: "success",
+          message: "Video transcript generated successfully and saved locally",
+          transcript,
+          savedPath: filePath
+      });
+
   } catch (error) {
+      console.error("Error in video-to-text:", error);
       res.status(500).json({ error: "Video-to-text request failed", details: error.message });
   }
 });
@@ -1241,12 +1308,41 @@ app.post("/api/ai/voice-to-text", logRequest, async (req, res) => {
       const { audioUrl } = req.body;
       if (!audioUrl) return res.status(400).json({ error: "Audio URL is required" });
 
-      const response = await executeLlama({ prompt: audioUrl, task: "voice-to-text" });
-      res.json(response);
+      const prompt = `Transcribe the following audio:\n"${audioUrl}"\nExtract spoken content and return a detailed transcript.`;
+      console.log("Generated Prompt:", prompt);
+
+      const response = await executeLlama({ prompt, task: "voice-to-text" });
+      console.log("Llama Response:", response);
+
+      // Extract the transcript
+      if (!response || !response.response || response.response.trim() === "") {
+          return res.status(500).json({ error: "Failed to transcribe audio", details: response });
+      }
+
+      const transcript = response.response;
+
+      // Define the file path to save the transcript
+      const filePath = path.join(__dirname, "generated_transcripts", `voice_transcript_${Date.now()}.txt`);
+
+      // Ensure the directory exists
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+
+      // Save the transcript to a text file
+      fs.writeFileSync(filePath, transcript, "utf8");
+
+      res.json({
+          status: "success",
+          message: "Audio transcript generated successfully and saved locally",
+          transcript,
+          savedPath: filePath
+      });
+
   } catch (error) {
+      console.error("Error in voice-to-text:", error);
       res.status(500).json({ error: "Voice-to-text request failed", details: error.message });
   }
 });
+
 // Ensure Express JSON middleware is enabled
 app.use(express.json());
 
