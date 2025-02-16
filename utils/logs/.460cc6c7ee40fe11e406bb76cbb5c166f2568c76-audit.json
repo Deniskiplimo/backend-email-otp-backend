@@ -6,16 +6,6 @@
     "auditLog": "/home/denis/backend-email-otp-backend/utils/logs/.460cc6c7ee40fe11e406bb76cbb5c166f2568c76-audit.json",
     "files": [
         {
-            "date": 1738444680703,
-            "name": "/home/denis/backend-email-otp-backend/utils/logs/combined-2025-02-02.log",
-            "hash": "b173e6c644f7a3faea732726ad13494be9a85dec5803de768f222382039de7c1"
-        },
-        {
-            "date": 1738530040333,
-            "name": "/home/denis/backend-email-otp-backend/utils/logs/combined-2025-02-03.log",
-            "hash": "eac575e353209fd255bf7f9caa21b41171971d71f5120e84d36b8214337e4340"
-        },
-        {
             "date": 1738676535869,
             "name": "/home/denis/backend-email-otp-backend/utils/logs/combined-2025-02-04.log",
             "hash": "387aa6689ccfa42d954f855af8c80b9c8cf11417718b71747ee21ba384aabcdf"
@@ -44,6 +34,11 @@
             "date": 1739653253943,
             "name": "/home/denis/backend-email-otp-backend/utils/logs/combined-2025-02-16.log",
             "hash": "5c114bdd3e39aaa96c3018c8201d496d74628e1429f7017d40e237bc0c2dfa12"
+        },
+        {
+            "date": 1739740050073,
+            "name": "/home/denis/backend-email-otp-backend/utils/logs/combined-2025-02-17.log",
+            "hash": "afa461232e7d37e1a7ff63958adacff409f9a512614995021725064d0392d6c4"
         }
     ],
     "hashType": "sha256"

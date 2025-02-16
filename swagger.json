@@ -589,6 +589,185 @@
         "500": { "description": "Server error" }
       }
     }
+  }, "/api/analytics/spending-patterns": {
+  "post": {
+    "tags": ["Llama"],
+    "summary": "Analyze spending patterns",
+    "description": "Identifies key spending patterns and trends from transaction data.",
+    "parameters": [
+      {
+        "name": "transactions",
+        "in": "query",
+        "required": true,
+        "explode": false,
+        "schema": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "amount": { "type": "number", "example": 120 },
+              "category": { "type": "string", "example": "food" },
+              "date": { "type": "string", "format": "date", "example": "2025-02-10" }
+            }
+          }
+        },
+        "style": "deepObject"
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Successful analysis",
+        "content": {
+          "application/json": {
+            "example": {
+              "status": "success",
+              "insights": "Users spend most on food during weekends."
+            }
+          }
+        }
+      },
+      "400": {
+        "description": "Bad Request",
+        "content": {
+          "application/json": {
+            "example": { "error": "Missing or invalid transactions parameter" }
+          }
+        }
+      },
+      "500": {
+        "description": "Internal Server Error",
+        "content": {
+          "application/json": {
+            "example": { "error": "Spending analysis failed", "details": "Server error" }
+          }
+        }
+      }
+    }
+  }
+}
+
+
+,
+ "/api/analytics/risk-assessment": {
+  "post": {
+    "tags": ["Llama"],
+    "summary": "Assess financial risk",
+    "description": "Evaluates financial risk level based on customer profile data.",
+    "parameters": [
+      {
+        "name": "customerProfile",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "example": "Frequent late payments, high debt"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Successful risk assessment",
+        "content": {
+          "application/json": {
+            "example": {
+              "status": "success",
+              "riskLevel": "High",
+              "recommendation": "Consider reducing debt and making timely payments."
+            }
+          }
+        }
+      },
+      "400": {
+        "description": "Bad Request",
+        "content": {
+          "application/json": {
+            "example": { "error": "Missing fields: customerProfile" }
+          }
+        }
+      },
+      "500": {
+        "description": "Internal Server Error",
+        "content": {
+          "application/json": {
+            "example": { "error": "Risk assessment failed", "details": "Server error" }
+          }
+        }
+      }
+    }
+  }
+}
+
+,
+  "/api/analytics/revenue-forecast": {
+    "post": {
+      "tags": ["Llama"],
+      "summary": "Predict revenue forecast",
+      "description": "Generates revenue predictions for the next quarter using historical financial data.",
+      "parameters": [
+        {
+          "name": "historicalData",
+          "in": "body",
+          "required": true,
+          "schema": {
+            "type": "array",
+            "items": { "type": "object" },
+            "example": [{ "quarter": "Q1 2024", "revenue": 50000 }]
+          }
+        }
+      ],
+      "responses": {
+        "200": { "description": "Forecast generated" },
+        "400": { "description": "Bad Request" },
+        "500": { "description": "Internal Server Error" }
+      }
+    }
+  },
+  "/api/analytics/customer-retention": {
+    "post": {
+      "tags": ["Llama"],
+      "summary": "Analyze customer retention",
+      "description": "Identifies churn risks and strategies for retaining customers.",
+      "parameters": [
+        {
+          "name": "customerHistory",
+          "in": "body",
+          "required": true,
+          "schema": {
+            "type": "array",
+            "items": { "type": "object" },
+            "example": [{ "customer": "John Doe", "lastPurchase": "2024-11-15" }]
+          }
+        }
+      ],
+      "responses": {
+        "200": { "description": "Retention analysis completed" },
+        "400": { "description": "Bad Request" },
+        "500": { "description": "Internal Server Error" }
+      }
+    }
+  },
+  "/api/banking/fraud-detection": {
+    "post": {
+      "tags": ["Llama"],
+      "summary": "Detect fraudulent transactions",
+      "description": "Analyzes transaction details to determine if fraud is present.",
+      "parameters": [
+        {
+          "name": "transactionDetails",
+          "in": "body",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "example": "Unusual high-value transaction at midnight"
+          }
+        }
+      ],
+      "responses": {
+        "200": { "description": "Fraud analysis completed" },
+        "400": { "description": "Bad Request" },
+        "500": { "description": "Internal Server Error" }
+      }
+    }
   },
   "/api/social/generate-caption": {
     "post": {

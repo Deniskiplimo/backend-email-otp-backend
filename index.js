@@ -6,9 +6,12 @@ const path = require('path');
 const { llamacpp, streamText } = require("modelfusion");
 const ip = '8.8.8.8';
 const os = require('os');
+const { body, validationResult ,query} = require("express-validator");
 const PORT = 4000;
 const { parentPort, workerData, isMainThread } = require("worker_threads");
-const { query, validationResult } = require('express-validator');
+const cors = require("cors");
+
+const morgan = require("morgan");
 const authenticateRefreshToken = require('./middleware/authenticateRefreshToken');
 const express = require('express');   
 const mongoose = require('mongoose'); 
@@ -41,7 +44,10 @@ const otpRoutes = require('./routes/otpRoutes');
 app.use(bodyParser.json());
 const winston = require('winston');
 require('winston-daily-rotate-file'); // Make sure to require this
-
+app.use(express.json({ limit: "1mb" }));
+app.use(cors());
+app.use(helmet());
+app.use(morgan("combined"));
 const transport = new winston.transports.DailyRotateFile({
   filename: 'logs/%DATE%-results.log', // Log file name pattern
   datePattern: 'YYYY-MM-DD',           // Date format for the filename
@@ -929,515 +935,225 @@ app.post("/completion", async (req, res) => {
 });
 
 // ✅ AI Server Start API
-app.post("/api/ai/start", async (req, res) => {
+
+// ✅ Start AI Server
+app.post("/start", async (req, res) => {
   try {
+    console.log("[AI] Starting AI Server...");
+    
     await setupModel(AI_PORT);
     await waitForServer(`http://localhost:${AI_PORT}`);
+
+    console.log(`[AI] Server started successfully on port ${AI_PORT}`);
     res.json({ message: "AI Server started successfully", port: AI_PORT });
+
   } catch (error) {
+    console.error("[AI] Failed to start:", error);
     res.status(500).json({ error: "AI Server failed to start", details: error.message });
   }
-}); 
+});
 
 // ✅ AI Execution API
-app.post("/api/ai/execute", logRequest, async (req, res) => {
-  try {
-    const { prompt, task, maxTokens, temperature, topK } = req.body;
-
-    // Validate input
-    if (!prompt) {
-      return res.status(400).json({ error: "Prompt is required" });
+app.post(
+  "/api/ai/execute",
+  [
+    body("prompt").notEmpty().withMessage("Prompt is required"),
+    body("maxTokens").optional().isInt({ min: 1 }).withMessage("maxTokens must be a positive integer"),
+    body("temperature").optional().isFloat({ min: 0, max: 1 }).withMessage("temperature must be between 0 and 1"),
+    body("topK").optional().isInt({ min: 1 }).withMessage("topK must be a positive integer"),
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ error: "Invalid request", details: errors.array() });
     }
 
-    console.log("Received request:", { prompt, task, maxTokens, temperature, topK });
-
-    // Call AI execution function
-    const response = await executeLlama({ prompt, task, maxTokens, temperature, topK });
-
-    // Debug response
-    console.log("AI Response:", response);
-
-    // Ensure response is valid
-    if (!response || Object.keys(response).length === 0) {
-      return res.status(500).json({ error: "AI execution returned an empty response" });
-    }
-
-    res.json({
-      status: "success",
-      message: "Response generated successfully",
-      response: response,
-    });
-  } catch (error) {
-    console.error("Execution failed:", error);
-    res.status(500).json({ error: "Execution failed", details: error.message });
-  }
-}); 
-
-  
-app.post("/api/ai/summarize", logRequest, async (req, res) => {
-  try {
-    const { text, maxTokens, temperature } = req.body;
-    if (!text) {
-      return res.status(400).json({ error: "Text is required" });
-    }
-
-    const response = await executeLlama({ prompt: `Summarize: ${text}`, task: "summarization", maxTokens, temperature });
-    res.json(response);
-  } catch (error) {
-    res.status(500).json({ error: "Summarization failed", details: error.message });
-  }
-});
-
-app.post("/api/ai/generate-blog", logRequest, async (req, res) => {
-  try {
-    const { topic, wordCount, tone, temperature } = req.body;
-    if (!topic) {
-      return res.status(400).json({ error: "Topic is required" });
-    }
-
-    const response = await executeLlama({ prompt: `Write a ${tone} blog post on: ${topic}`, task: "text-generation", maxTokens: wordCount, temperature });
-    res.json(response);
-  } catch (error) {
-    res.status(500).json({ error: "Blog generation failed", details: error.message });
-  }
-});
-app.post("/api/ai/image-caption", logRequest, async (req, res) => {
-  try {
-    const { imageUrl } = req.body;
-    if (!imageUrl) {
-      return res.status(400).json({ error: "Image URL is required" });
-    }
-
-    console.log("🔍 Received image URL:", imageUrl);
-
-    // Debug: Ensure executeLlama is properly called
-    let response;
     try {
-      response = await executeLlama({
-        prompt: `Describe the content of this image: ${imageUrl}.`,
-        task: "image-captioning",
+      const { prompt, task, maxTokens, temperature, topK } = req.body;
+      console.log("[AI] Executing AI with params:", { prompt, task, maxTokens, temperature, topK });
+
+      const response = await executeLlama({ prompt, task, maxTokens, temperature, topK });
+
+      if (!response || Object.keys(response).length === 0) {
+        return res.status(500).json({ error: "AI execution returned an empty response" });
+      }
+
+      res.json({
+        status: "success",
+        message: "Response generated successfully",
+        response,
       });
-    } catch (aiError) {
-      console.error("❌ AI Execution Error:", aiError);
-      return res.status(500).json({ error: "AI execution failed", details: aiError.message });
+
+    } catch (error) {
+      console.error("[AI] Execution failed:", error);
+      res.status(500).json({ error: "Execution failed", details: error.message });
+    }
+  }
+);
+
+// ✅ AI Summarization API
+app.post(
+  "/api/ai/summarize",
+  [
+    body("text").notEmpty().withMessage("Text is required"),
+    body("maxTokens").optional().isInt({ min: 1 }).withMessage("maxTokens must be a positive integer"),
+    body("temperature").optional().isFloat({ min: 0, max: 1 }).withMessage("temperature must be between 0 and 1"),
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ error: "Invalid request", details: errors.array() });
     }
 
-    console.log("🤖 AI Model Raw Response:", response);
+    try {
+      const { text, maxTokens, temperature } = req.body;
+      console.log("[AI] Summarizing text...");
 
-    // Ensure valid AI response
-    if (!response || typeof response.response !== "string" || response.response.trim() === "") {
-      console.error("❌ AI returned an invalid response:", response);
+      const response = await executeLlama({
+        prompt: `Summarize: ${text}`,
+        task: "summarization",
+        maxTokens,
+        temperature,
+      });
+
+      res.json({ status: "success", message: "Summarization successful", response });
+
+    } catch (error) {
+      console.error("[AI] Summarization failed:", error);
+      res.status(500).json({ error: "Summarization failed", details: error.message });
+    }
+  }
+);
+
+// Utility function for error handling
+const handleError = (res, message, error) => {
+  console.error(`❌ ${message}:`, error);
+  res.status(500).json({ error: message, details: error.message || error });
+};
+
+// AI Task Handler
+const handleAITask = async (req, res, prompt, task, options = {}) => {
+  try {
+    const response = await executeLlama({ prompt, task, ...options });
+    if (!response || !response.response || response.response.trim() === "") {
       return res.status(500).json({ error: "AI model returned an invalid response" });
     }
-
-    res.json({ status: "success", caption: response.response.trim() });
+    res.json({ status: "success", response: response.response.trim() });
   } catch (error) {
-    console.error("❌ Image captioning failed:", error);
-    res.status(500).json({ error: "Image captioning failed", details: error.message });
+    handleError(res, `${task} failed`, error);
   }
+};
+
+// AI Routes
+app.post("/api/ai/generate-blog", async (req, res) => {
+  const { topic, wordCount, tone, temperature = 0.7 } = req.body;
+  if (!topic) return res.status(400).json({ error: "Topic is required" });
+  await handleAITask(req, res, `Write a ${tone} blog post on: ${topic}`, "text-generation", { maxTokens: wordCount, temperature });
 });
 
-// ✅ AI Keyword Extraction
-app.post("/api/ai/extract-keywords", logRequest, async (req, res) => {
-  try {
-    const { text } = req.body;
-    if (!text) {
-      return res.status(400).json({ error: "Text is required" });
-    }
-
-    const response = await executeLlama({ 
-      prompt: `Extract key topics from: ${text}`, 
-      task: "keyword-extraction" 
-    });
-
-    res.json({ keywords: response.response });
-  } catch (error) {
-    res.status(500).json({ error: "Keyword extraction failed", details: error.message });
-  }
+app.post("/api/ai/image-caption", async (req, res) => {
+  const { imageUrl } = req.body;
+  if (!imageUrl) return res.status(400).json({ error: "Image URL is required" });
+  await handleAITask(req, res, `Describe the content of this image: ${imageUrl}.`, "image-captioning");
 });
 
-app.post("/api/ai/paraphrase", logRequest, async (req, res) => {
-  try {
-    const { text, style } = req.body;
-    if (!text) {
-      return res.status(400).json({ error: "Text is required" });
-    }
-
-    const prompt = `Task: Paraphrase the following text in a ${style || "neutral"} tone.\nText: "${text}"\nParaphrased Output:`;
-    console.log("Generated Prompt:", prompt);
-
-    const response = await executeLlama({ prompt, task: "paraphrasing" });
-    console.log("Llama Response:", response);
-
-    if (!response || !response.response || response.response.trim() === "") {
-      return res.status(500).json({ error: "Failed to paraphrase", details: response });
-    }
-
-    res.json({ paraphrasedText: response.response.trim() });
-  } catch (error) {
-    console.error("Error in paraphrasing:", error);
-    res.status(500).json({ error: "Paraphrasing failed", details: error.message });
-  }
-});
- 
-
-app.post("/api/ai/translate", logRequest, async (req, res) => {
-  try {
-    const { text, sourceLang, targetLang } = req.body;
-    if (!text || !sourceLang || !targetLang) {
-      return res.status(400).json({ error: "Text, sourceLang, and targetLang are required" });
-    }
-
-    const response = await executeLlama({ prompt: `Translate '${text}' from ${sourceLang} to ${targetLang}:`, task: "translation" });
-    res.json(response);
-  } catch (error) {
-    res.status(500).json({ error: "Translation failed", details: error.message });
-  }
-});
-app.post("/api/ai/generate-code", logRequest, async (req, res) => {
-  try {
-    const { description, language, maxTokens = 100, temperature = 0.7 } = req.body;
-
-    if (!description || !language) {
-      return res.status(400).json({ error: "Description and language are required" });
-    }
-
-    console.log(`📝 Generating ${language} code for: "${description}"`);
-
-    const result = await executeLlama({ 
-      prompt: `Write a ${language} function to ${description}. Provide well-structured, optimized, and documented code.`,
-      task: "code-generation", 
-      maxTokens, 
-      temperature 
-    });
-
-    if (!result || typeof result.response !== "string") {
-      return res.status(500).json({ error: "Invalid response from AI model" });
-    }
-
-    res.json({ 
-      status: "success",
-      message: "Code generated successfully",
-      language,
-      code: result.response.trim() 
-    });
-
-  } catch (error) {
-    console.error("❌ Code generation failed:", error.message);
-    res.status(500).json({ error: "Code generation failed", details: error.message });
-  }
-});
- 
-
- 
-app.post("/api/ai/chat", logRequest, async (req, res) => {
-  try {
-    const { message, context, temperature } = req.body;
-    if (!message) {
-      return res.status(400).json({ error: "Message is required" });
-    }
-
-    const response = await executeLlama({ prompt: `Chatbot response to: '${message}' in context '${context}'`, task: "chat", temperature });
-    res.json(response);
-  } catch (error) {
-    res.status(500).json({ error: "Chat response failed", details: error.message });
-  }
+app.post("/api/ai/extract-keywords", async (req, res) => {
+  const { text } = req.body;
+  if (!text) return res.status(400).json({ error: "Text is required" });
+  await handleAITask(req, res, `Extract key topics from: ${text}`, "keyword-extraction");
 });
 
-app.post("/api/ai/generate-sql", logRequest, async (req, res) => {
-  try {
-    const { description, databaseType, temperature = 0.7 } = req.body;
-
-    if (!description || !databaseType) {
-      return res.status(400).json({ error: "Description and databaseType are required" });
-    }
-
-    const response = await executeLlama({
-      prompt: `Generate a ${databaseType} SQL query that performs the following task: ${description}`,
-      task: "sql-generation",
-      temperature
-    });
-
-    // Check if response is empty or invalid
-    if (!response || !response.response || !response.response.trim()) {
-      return res.status(500).json({
-        error: "AI model returned an empty response",
-        details: "The AI model didn't generate any SQL query for the given prompt."
-      });
-    }
-
-    res.json(response); // Return the AI model response
-  } catch (error) {
-    console.error("❌ SQL generation failed:", error.message);
-    res.status(500).json({ error: "SQL generation failed", details: error.message });
-  }
+app.post("/api/ai/paraphrase", async (req, res) => {
+  const { text, style = "neutral" } = req.body;
+  if (!text) return res.status(400).json({ error: "Text is required" });
+  await handleAITask(req, res, `Paraphrase the following text in a ${style} tone: "${text}"`, "paraphrasing");
 });
 
-// ✅ Sentiment Analysis Route
+app.post("/api/ai/translate", async (req, res) => {
+  const { text, sourceLang, targetLang } = req.body;
+  if (!text || !sourceLang || !targetLang) return res.status(400).json({ error: "Text, sourceLang, and targetLang are required" });
+  await handleAITask(req, res, `Translate '${text}' from ${sourceLang} to ${targetLang}:`, "translation");
+});
+
+app.post("/api/ai/generate-code", async (req, res) => {
+  const { description, language, maxTokens = 100, temperature = 0.7 } = req.body;
+  if (!description || !language) return res.status(400).json({ error: "Description and language are required" });
+  await handleAITask(req, res, `Write a ${language} function to ${description}.`, "code-generation", { maxTokens, temperature });
+});
+
+app.post("/api/ai/chat", async (req, res) => {
+  const { message, context, temperature = 0.7 } = req.body;
+  if (!message) return res.status(400).json({ error: "Message is required" });
+  await handleAITask(req, res, `Chatbot response to: '${message}' in context '${context}'`, "chat", { temperature });
+});
+
+app.post("/api/ai/generate-sql", async (req, res) => {
+  const { description, databaseType, temperature = 0.7 } = req.body;
+  if (!description || !databaseType) return res.status(400).json({ error: "Description and databaseType are required" });
+  await handleAITask(req, res, `Generate a ${databaseType} SQL query that performs: ${description}`, "sql-generation", { temperature });
+});
+
 app.post("/api/ai/sentiment", async (req, res) => {
-  try {
-    const { text } = req.body;
-    if (!text) {
-      return res.status(400).json({ error: "Text is required" });
-    }
-
-    res.setHeader("Content-Type", "application/json");
-
-    // 🔥 Improved prompt for better results
-    const prompt = `Classify the sentiment of the following text as Positive, Negative, or Neutral: "${text}"`;
-
-    const result = await executeLlama({ 
-      prompt,
-      maxTokens: 50 
-    });
-
-    console.log("🔍 AI Response:", result); // Debugging
-
-    if (!result || typeof result.response !== "string") {
-      return res.status(500).json({ error: "Invalid response from AI model" });
-    }
-
-    res.json({ sentiment: result.response.trim() });
-
-  } catch (error) {
-    console.error("❌ Sentiment analysis failed:", error.message);
-    res.status(500).json({ error: "Sentiment analysis failed", details: error.message });
-  }
+  const { text } = req.body;
+  if (!text) return res.status(400).json({ error: "Text is required" });
+  await handleAITask(req, res, `Classify the sentiment of this text: "${text}"`, "sentiment-analysis", { maxTokens: 50 });
 });
-
-
-
-
-
 // ✅ AI Data Analysis
-app.post("/api/ai/analyze-data", logRequest, async (req, res) => {
+
+
+
+
+// Generic AI Request Handler
+const handleAIRequest = async (req, res, task, promptTemplate) => {
   try {
-    const { dataset, question } = req.body;
-    if (!dataset || !question) {
-      return res.status(400).json({ error: "Dataset and question are required" });
-    }
-
-    const response = await executeLlama({ prompt: `Analyze this dataset and answer: ${question}\n${JSON.stringify(dataset)}`, task: "data-analysis" });
-    res.json(response);
-  } catch (error) {
-    res.status(500).json({ error: "Data analysis failed", details: error.message });
-  }
-});
-
-// ✅ AI Grammar Check
-app.post("/api/ai/grammar-check", logRequest, async (req, res) => {
-  try {
-    const { text } = req.body;
-    if (!text) {
-      return res.status(400).json({ error: "Text is required" });
-    }
-
-    const response = await executeLlama({ prompt: `Correct the grammar in: ${text}`, task: "grammar-correction" });
-    res.json(response);
-  } catch (error) {
-    res.status(500).json({ error: "Grammar correction failed", details: error.message });
-  }
-});
-
-// Chatbot API
-app.post("/api/ai/chatbot", logRequest, async (req, res) => {
-  try {
-      const { message } = req.body;
-      if (!message) return res.status(400).json({ error: "Message is required" });
-
-      const response = await executeLlama({ prompt: message, task: "chatbot" });
-      res.json(response);
-  } catch (error) {
-      res.status(500).json({ error: "Chatbot request failed", details: error.message });
-  }
-});
-
-app.post("/api/ai/text-to-video", logRequest, async (req, res) => {
-  try {
-    const { text } = req.body;
-    if (!text) return res.status(400).json({ error: "Text is required" });
-
-    const prompt = `Generate exactly one video based on the following description:\n"${text}"\nProvide only one video description, and do not include any additional video descriptions.`;
-    console.log("Generated Prompt:", prompt);
-
-    const response = await executeLlama({
-      prompt,
-      task: "text-to-video",
-      n: 1, // Ensure only one video description is generated
-      maxTokens: 256,
-      temperature: 0.7,
-      topK: 50,
-      nThreads: 3
-    });
-
-    console.log("Llama Response:", response);
-
-    // Check if the response is valid
+    const prompt = promptTemplate(req.body);
+    const response = await executeLlama({ prompt, task });
     if (!response || !response.response || response.response.trim() === "") {
-      return res.status(500).json({ error: "Failed to generate video", details: response });
+      return res.status(500).json({ error: "AI response is empty", details: response });
     }
+    res.json({ status: "success", response: response.response.trim() });
+  } catch (error) {
+    handleError(res, error, `${task} failed`);
+  }
+};
 
-    // Ensure only one video description is returned (take the first one)
-    const videoDescriptions = response.response.trim().split("\n");
-    const videoDescription = videoDescriptions[0]; // Use only the first description
+// AI Routes
+app.post("/api/ai/analyze-data", logRequest, validateRequest(["dataset", "question"]), (req, res) => {
+  handleAIRequest(req, res, "data-analysis", (body) => `Analyze this dataset and answer: ${body.question}\n${JSON.stringify(body.dataset)}`);
+});
 
-    // Define the file path to save the video description
+app.post("/api/ai/grammar-check", logRequest, validateRequest(["text"]), (req, res) => {
+  handleAIRequest(req, res, "grammar-correction", (body) => `Correct the grammar in: ${body.text}`);
+});
+
+app.post("/api/ai/chatbot", logRequest, validateRequest(["message"]), (req, res) => {
+  handleAIRequest(req, res, "chatbot", (body) => body.message);
+});
+
+app.post("/api/ai/text-to-video", logRequest, validateRequest(["text"]), async (req, res) => {
+  try {
+    const prompt = `Generate a video for: \"${req.body.text}\"`;
+    const response = await executeLlama({ prompt, task: "text-to-video", n: 1, maxTokens: 256, temperature: 0.7, topK: 50, nThreads: 3 });
+    if (!response || !response.response.trim()) {
+      return res.status(500).json({ error: "Failed to generate video" });
+    }
     const filePath = path.join(__dirname, "generated_videos", `video_${Date.now()}.txt`);
-
-    // Ensure the directory exists
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
-
-    // Save the video description to a text file
-    fs.writeFileSync(filePath, videoDescription, "utf8");
-
-    res.json({
-      status: "success",
-      message: "Video description generated successfully and saved locally",
-      videoDescription,
-      savedPath: filePath
-    });
-
+    fs.writeFileSync(filePath, response.response.trim(), "utf8");
+    res.json({ status: "success", videoDescription: response.response.trim(), savedPath: filePath });
   } catch (error) {
-    console.error("Error in text-to-video:", error);
-    res.status(500).json({ error: "Text-to-video request failed", details: error.message });
-  }
-});
-
-app.post("/api/ai/video-to-text", logRequest, async (req, res) => {
-  try {
-      const { videoUrl } = req.body;
-      if (!videoUrl) return res.status(400).json({ error: "Video URL is required" });
-
-      const prompt = `Transcribe the following video:\n"${videoUrl}"\nExtract spoken content and return a detailed transcript.`;
-      console.log("Generated Prompt:", prompt);
-
-      const response = await executeLlama({ prompt, task: "video-to-text" });
-      console.log("Llama Response:", response);
-
-      // Extract the transcript
-      if (!response || !response.response || response.response.trim() === "") {
-          return res.status(500).json({ error: "Failed to transcribe video", details: response });
-      }
-
-      const transcript = response.response;
-
-      // Define the file path to save the transcript
-      const filePath = path.join(__dirname, "generated_transcripts", `transcript_${Date.now()}.txt`);
-
-      // Ensure the directory exists
-      fs.mkdirSync(path.dirname(filePath), { recursive: true });
-
-      // Save the transcript to a text file
-      fs.writeFileSync(filePath, transcript, "utf8");
-
-      res.json({
-          status: "success",
-          message: "Video transcript generated successfully and saved locally",
-          transcript,
-          savedPath: filePath
-      });
-
-  } catch (error) {
-      console.error("Error in video-to-text:", error);
-      res.status(500).json({ error: "Video-to-text request failed", details: error.message });
-  }
-});
-
-// Voice to Text API
-app.post("/api/ai/voice-to-text", logRequest, async (req, res) => {
-  try {
-      const { audioUrl } = req.body;
-      if (!audioUrl) return res.status(400).json({ error: "Audio URL is required" });
-
-      const prompt = `Transcribe the following audio:\n"${audioUrl}"\nExtract spoken content and return a detailed transcript.`;
-      console.log("Generated Prompt:", prompt);
-
-      const response = await executeLlama({ prompt, task: "voice-to-text" });
-      console.log("Llama Response:", response);
-
-      // Extract the transcript
-      if (!response || !response.response || response.response.trim() === "") {
-          return res.status(500).json({ error: "Failed to transcribe audio", details: response });
-      }
-
-      const transcript = response.response;
-
-      // Define the file path to save the transcript
-      const filePath = path.join(__dirname, "generated_transcripts", `voice_transcript_${Date.now()}.txt`);
-
-      // Ensure the directory exists
-      fs.mkdirSync(path.dirname(filePath), { recursive: true });
-
-      // Save the transcript to a text file
-      fs.writeFileSync(filePath, transcript, "utf8");
-
-      res.json({
-          status: "success",
-          message: "Audio transcript generated successfully and saved locally",
-          transcript,
-          savedPath: filePath
-      });
-
-  } catch (error) {
-      console.error("Error in voice-to-text:", error);
-      res.status(500).json({ error: "Voice-to-text request failed", details: error.message });
+    handleError(res, error, "Text-to-video request failed");
   }
 });
 
 // AI-Powered Sentiment Analysis
-app.post("/api/social/sentiment-analysis", async (req, res) => {
-  try {
-    const { text } = req.body;
-    if (!text) return res.status(400).json({ error: "Text is required" });
-
-    const prompt = `Analyze sentiment: "${text}".`;
-    const response = await executeLlama({ prompt, task: "sentiment-analysis" });
-    res.json({ status: "success", sentiment: response.response.trim() });
-  } catch (error) {
-    res.status(500).json({ error: "Sentiment analysis failed", details: error.message });
-  }
+app.post("/api/social/sentiment-analysis", logRequest, validateRequest(["text"]), (req, res) => {
+  handleAIRequest(req, res, "sentiment-analysis", (body) => `Analyze sentiment: \"${body.text}\".`);
 });
 
-// AI-Powered Comment Moderation
-app.post("/api/social/moderate-comment", async (req, res) => {
-  try {
-    const { comment } = req.body;
-    if (!comment || typeof comment !== "string") {
-      return res.status(400).json({ error: "Valid comment is required" });
-    }
-
-    const prompt = `Moderate the following comment strictly based on community guidelines. 
-    If it's acceptable, reply only 'approved'. If it's not, reply 'rejected' and briefly state the reason. 
-    Comment: "${comment}"`;
-
-    const response = await executeLlama({ prompt, task: "moderation" });
-    const moderationResult = response.response.trim().toLowerCase();
-
-    if (moderationResult.startsWith("approved")) {
-      return res.json({ status: "success", moderation: "approved" });
-    } else if (moderationResult.startsWith("rejected")) {
-      const reason = moderationResult.replace("rejected", "").trim();
-      return res.json({ status: "success", moderation: "rejected", reason: reason || "Violates community guidelines" });
-    } else {
-      return res.status(500).json({ error: "Unexpected AI response", details: moderationResult });
-    }
-  } catch (error) {
-    res.status(500).json({ error: "Comment moderation failed", details: error.message });
-  }
-});
- 
 // AI-Powered Fake News Detection
-app.post("/api/social/fake-news-detection", async (req, res) => {
-  try {
-    const { articleText } = req.body;
-    if (!articleText) return res.status(400).json({ error: "Article text is required" });
-
-    const prompt = `Analyze if this article contains fake news: "${articleText}".`;
-    const response = await executeLlama({ prompt, task: "fake-news-detection" });
-    res.json({ status: "success", isFake: response.response.trim() === "true" });
-  } catch (error) {
-    res.status(500).json({ error: "Fake news detection failed", details: error.message });
-  }
+app.post("/api/social/fake-news-detection", logRequest, validateRequest(["articleText"]), (req, res) => {
+  handleAIRequest(req, res, "fake-news-detection", (body) => `Analyze if this article contains fake news: \"${body.articleText}\".`);
 });
 
 // AI-Powered Hashtag Recommendation
@@ -1718,102 +1434,110 @@ app.post("/api/banking/chatbot", async (req, res) => {
     res.status(500).json({ error: "Chatbot response failed", details: error.message });
   }
 });
+app.post("/api/social/moderate-comment", logRequest, validateRequest(["comment"]), (req, res) => {
+  handleAIRequest(req, res, "moderation", (body) => 
+    `You are an AI moderator. You must respond with ONLY one of the following:
+    - "approved"
+    - "rejected: [brief reason]"
 
+    STRICT RULES:
+    - Do NOT add any other words, explanations, system messages, or formatting.
+    - If you fail to follow these instructions, your response will be considered invalid.
+
+    Now, moderate this comment strictly based on community guidelines:
+    Comment: "${body.comment}"`);
+});
 /** ========== AI-Powered Analytics APIs ========== **/
 
 // AI-Powered Spending Pattern Analysis
-app.post("/api/analytics/spending-patterns", async (req, res) => {
-  try {
-    const { transactions } = req.body;
-    if (!transactions || transactions.length === 0) return res.status(400).json({ error: "Transaction data is required" });
-
-    const prompt = `Analyze these transactions: "${JSON.stringify(transactions)}". Identify key spending patterns and trends.`;
-    const response = await executeLlama({ prompt, task: "spending-analysis" });
-
-    res.json({ status: "success", insights: response.response.trim() });
-
-  } catch (error) {
-    res.status(500).json({ error: "Spending analysis failed", details: error.message });
-  }
+app.post("/api/analytics/spending-patterns", logRequest, validateRequest(["transactions"]), (req, res) => {
+  handleAIRequest(req, res, "spending-analysis", (query) => 
+    `Analyze these transactions: "${JSON.stringify(query.transactions)}". Identify key spending patterns and trends.`);
 });
 
 // AI-Powered Risk Assessment
-app.post("/api/analytics/risk-assessment", async (req, res) => {
+app.post("/api/analytics/risk-assessment", logRequest, validateRequest(["customerProfile"]), (req, res) => {
+  handleAIRequest(req, res, "risk-analysis", (query) => 
+    `Assess the financial risk level for this customer profile: "${query.customerProfile}". Provide a risk rating (low, medium, high) and justification.`);
+});
+
+// AI-Powered Revenue Forecasting
+app.post("/api/analytics/revenue-forecast", logRequest, validateRequest(["historicalData"]), (req, res) => {
+  handleAIRequest(req, res, "revenue-forecasting", (query) => 
+    `Predict future revenue based on this historical financial data: "${JSON.stringify(query.historicalData)}". Provide a forecast for the next quarter.`);
+});
+
+// AI-Powered Customer Retention Analysis
+app.post("/api/analytics/customer-retention", logRequest, validateRequest(["customerHistory"]), (req, res) => {
+  handleAIRequest(req, res, "customer-retention", (query) => 
+    `Analyze customer retention based on this historical data: "${JSON.stringify(query.customerHistory)}". Identify churn risks and retention strategies.`);
+});
+
+// AI-Powered Fraud Detection
+app.post("/api/banking/fraud-detection", logRequest, validateRequest(["transactionDetails"]), (req, res) => {
+  handleAIRequest(req, res, "fraud-detection", (query) => 
+    `Analyze this transaction: "${query.transactionDetails}". Determine if it is fraudulent (yes or no) and provide a confidence score (0-1).`);
+});
+ 
+
+// AI-Powered Customer Spending Analytics
+
+app.post("/api/analytics/spending-patterns", logRequest, validateRequest(["transactions"]), async (req, res) => {
   try {
-    const { customerProfile } = req.body;
-    if (!customerProfile) return res.status(400).json({ error: "Customer profile data is required" });
+    const prompt = `Analyze these transactions: "${JSON.stringify(req.body.transactions)}". Identify key spending patterns and trends.`;
 
-    const prompt = `Assess the financial risk level for this customer profile: "${customerProfile}". Provide a risk rating (low, medium, high) and justification.`;
-    const response = await executeLlama({ prompt, task: "risk-analysis" });
+    console.log("Generated prompt:", prompt); // Debugging
 
-    res.json({ status: "success", riskLevel: response.response.trim() });
+    const aiResponse = await handleAIRequest(req, res, "spending-analysis", () => prompt);
+
+    console.log("AI Response:", aiResponse); // Debugging
+
+    if (!aiResponse || !aiResponse.response || aiResponse.response.trim() === "") {
+      return res.status(500).json({
+        error: "AI response is empty",
+        details: aiResponse
+      });
+    }
+
+    res.json({ status: "success", insights: aiResponse.response.trim() });
 
   } catch (error) {
+    console.error("Error in spending pattern analysis:", error);
+    res.status(500).json({ error: "Spending analysis failed", details: error.message });
+  }
+});
+app.post("/api/analytics/risk-assessment", logRequest, validateRequest(["customerProfile"]), async (req, res) => {
+  try {
+    const { customerProfile } = req.body;
+
+    if (!customerProfile || typeof customerProfile !== "string") {
+      return res.status(400).json({ error: "Invalid or missing customerProfile" });
+    }
+
+    console.log("Received customerProfile:", customerProfile); // Debugging
+
+    const prompt = `Assess the financial risk level for the following customer profile: "${customerProfile}". Provide a risk level and recommendations.`;
+
+    const aiResponse = await handleAIRequest(req, res, "risk-assessment", () => prompt);
+
+    console.log("AI Response:", aiResponse); // Debugging
+
+    if (!aiResponse || !aiResponse.response || aiResponse.response.trim() === "") {
+      return res.status(500).json({
+        error: "AI response is empty",
+        details: aiResponse
+      });
+    }
+
+    res.json({ status: "success", riskLevel: aiResponse.response.trim() });
+
+  } catch (error) {
+    console.error("Error in risk assessment:", error);
     res.status(500).json({ error: "Risk assessment failed", details: error.message });
   }
 });
 
-// AI-Powered Revenue Forecasting
-app.post("/api/analytics/revenue-forecast", async (req, res) => {
-  try {
-    const { historicalData } = req.body;
-    if (!historicalData) return res.status(400).json({ error: "Historical financial data is required" });
 
-    const prompt = `Predict future revenue based on this historical financial data: "${JSON.stringify(historicalData)}". Provide a forecast for the next quarter.`;
-    const response = await executeLlama({ prompt, task: "revenue-forecasting" });
-
-    res.json({ status: "success", forecast: response.response.trim() });
-
-  } catch (error) {
-    res.status(500).json({ error: "Revenue forecasting failed", details: error.message });
-  }
-});
-
-// AI-Powered Customer Retention Analysis
-app.post("/api/analytics/customer-retention", async (req, res) => {
-  try {
-    const { customerHistory } = req.body;
-    if (!customerHistory) return res.status(400).json({ error: "Customer history data is required" });
-
-    const prompt = `Analyze customer retention based on this historical data: "${JSON.stringify(customerHistory)}". Identify churn risks and retention strategies.`;
-    const response = await executeLlama({ prompt, task: "customer-retention" });
-
-    res.json({ status: "success", insights: response.response.trim() });
-
-  } catch (error) {
-    res.status(500).json({ error: "Customer retention analysis failed", details: error.message });
-  }
-});// AI-Powered Fraud Detection
-app.post("/api/banking/fraud-detection", async (req, res) => {
-  try {
-    const { transactionDetails } = req.body;
-    if (!transactionDetails) return res.status(400).json({ error: "Transaction details are required" });
-
-    const prompt = `Analyze this transaction: "${transactionDetails}". Determine if it is fraudulent (yes or no) and provide a confidence score (0-1).`;
-    const response = await executeLlama({ prompt, task: "fraud-detection" });
-
-    res.json({ status: "success", analysis: response.response.trim() });
-
-  } catch (error) {
-    res.status(500).json({ error: "Fraud detection failed", details: error.message });
-  }
-});
-
-// AI-Powered Customer Spending Analytics
-app.post("/api/analytics/spending-patterns", async (req, res) => {
-  try {
-    const { transactions } = req.body;
-    if (!transactions || transactions.length === 0) return res.status(400).json({ error: "Transaction data is required" });
-
-    const prompt = `Analyze these transactions: "${JSON.stringify(transactions)}". Identify key spending patterns and trends.`;
-    const response = await executeLlama({ prompt, task: "spending-analysis" });
-
-    res.json({ status: "success", insights: response.response.trim() });
-
-  } catch (error) {
-    res.status(500).json({ error: "Spending analysis failed", details: error.message });
-  }
-});
 
 // AI-Powered Risk Assessment
 app.post("/api/analytics/risk-assessment", async (req, res) => {
