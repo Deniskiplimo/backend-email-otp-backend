@@ -1101,7 +1101,7 @@ app.post("/api/ai/sentiment", async (req, res) => {
 // ✅ AI Data Analysis
 
 
-
+ 
 
 // Generic AI Request Handler
 const handleAIRequest = async (req, res, task, promptTemplate) => {
@@ -1230,210 +1230,127 @@ app.post("/api/social/auto-reply", async (req, res) => {
     res.status(500).json({ error: "Auto-reply generation failed", details: error.message });
   }
 });
-
 // AI-Powered Image Captioning
-app.post("/api/social/generate-caption", async (req, res) => {
-  try {
-    const imageUrl = req.body.imageUrl || req.query.imageUrl;
-
+app.post("/api/social/generate-caption", logRequest, (req, res) => {
+  handleAIRequest(req, res, "image-captioning", (body) => {
+    const imageUrl = body.imageUrl || req.query.imageUrl;
     if (!imageUrl) {
-      return res.status(400).json({ error: "Image URL is required" });
+      throw new Error("Image URL is required");
     }
-
-    const prompt = `Describe this image: "${imageUrl}".`;
-    const response = await executeLlama({ prompt, task: "image-captioning" });
-
-    if (!response || !response.response) {
-      throw new Error("Invalid response from AI model");
-    }
-
-    res.json({ status: "success", caption: response.response.trim() });
-  } catch (error) {
-    console.error("Image captioning error:", error);
-    res.status(500).json({ error: "Image captioning failed", details: error.message });
-  }
-});
+    return `Describe this image: "${imageUrl}".`;
+  });
+}); 
 
 // AI-Powered Trend Analysis
-app.post("/api/social/analyze-trends", async (req, res) => {
-  try {
-    const topic = req.body.topic || req.query.topic;
-
+app.post("/api/social/analyze-trends", logRequest, (req, res) => {
+  handleAIRequest(req, res, "trend-analysis", (body) => {
+    const topic = body.topic || req.query.topic;
     if (!topic) {
-      return res.status(400).json({ error: "Topic is required" });
+      throw new Error("Topic is required");
     }
-
-    const prompt = `Analyze social media trends on: "${topic}".`;
-    const response = await executeLlama({ prompt, task: "trend-analysis" });
-
-    if (!response || !response.response) {
-      throw new Error("Invalid response from AI model");
-    }
-
-    res.json({ status: "success", trends: response.response.trim() });
-  } catch (error) {
-    console.error("Trend analysis error:", error);
-    res.status(500).json({ error: "Trend analysis failed", details: error.message });
-  }
+    return `Analyze social media trends on: "${topic}".`;
+  });
 });
 
 // AI-Powered Credit Score Estimation
-app.post("/api/banking/credit-score", async (req, res) => {
-  try {
-    const financialHistory = req.body.financialHistory;
-
+app.post("/api/banking/credit-score", logRequest, (req, res) => {
+  handleAIRequest(req, res, "credit-score-estimation", (body) => {
+    const { financialHistory } = body;
     if (!financialHistory) {
-      return res.status(400).json({ error: "Financial history data is required" });
+      throw new Error("Financial history data is required");
     }
-
-    const prompt = `Estimate the credit score based on this financial history: ${JSON.stringify(financialHistory)}. Provide a score out of 850.`;
-    const response = await executeLlama({ prompt, task: "credit-score-estimation" });
-
-    if (!response || !response.response) {
-      throw new Error("Invalid response from AI model");
-    }
-
-    res.json({ status: "success", creditScore: response.response.trim() });
-  } catch (error) {
-    console.error("Credit score estimation error:", error);
-    res.status(500).json({ error: "Credit score estimation failed", details: error.message });
-  }
+    return `Estimate the credit score based on this financial history: ${JSON.stringify(financialHistory)}. Provide a score out of 850.`;
+  });
 });
 
 // AI-Powered Post Optimization
-app.post("/api/social/optimal-post-time", async (req, res) => {
-  try {
-    const userActivityData = req.body.userActivityData;
-
+app.post("/api/social/optimal-post-time", logRequest, (req, res) => {
+  handleAIRequest(req, res, "post-optimization", (body) => {
+    const { userActivityData } = body;
     if (!userActivityData) {
-      return res.status(400).json({ error: "User activity data is required" });
+      throw new Error("User activity data is required");
     }
-
-    const prompt = `Analyze this user activity data: ${JSON.stringify(userActivityData)}. Suggest the best time to post for maximum engagement.`;
-    const response = await executeLlama({ prompt, task: "post-optimization" });
-
-    if (!response || !response.response) {
-      throw new Error("Invalid response from AI model");
-    }
-
-    res.json({ status: "success", bestTime: response.response.trim() });
-  } catch (error) {
-    console.error("Post optimization error:", error);
-    res.status(500).json({ error: "Post optimization failed", details: error.message });
-  }
+    return `Analyze this user activity data: ${JSON.stringify(userActivityData)}. Suggest the best time to post for maximum engagement.`;
+  });
 });
- 
 
 // AI-Powered Fake News Detection
-app.post("/api/social/fake-news-detection", async (req, res) => {
-  try {
-    const { articleText } = req.body;
-    if (!articleText) return res.status(400).json({ error: "Article text is required" });
-
-    const prompt = `Analyze this article: "${articleText}". Determine if it contains false or misleading information (yes or no) and provide reasoning.`;
-    const response = await executeLlama({ prompt, task: "fake-news-detection" });
-
-    res.json({ status: "success", analysis: response.response.trim() });
-
-  } catch (error) {
-    res.status(500).json({ error: "Fake news detection failed", details: error.message });
-  }
+app.post("/api/social/fake-news-detection", logRequest, (req, res) => {
+  handleAIRequest(req, res, "fake-news-detection", (body) => {
+    const { articleText } = body;
+    if (!articleText) {
+      throw new Error("Article text is required");
+    }
+    return `Analyze this article: "${articleText}". Determine if it contains false or misleading information (yes or no) and provide reasoning.`;
+  });
 });
 
 // AI-Powered Text Summarization
-app.post("/api/nlp/summarize-text", async (req, res) => {
-  try {
-    const { text } = req.body;
-    if (!text) return res.status(400).json({ error: "Text is required" });
-
-    const prompt = `Summarize the following text into key points: "${text}".`;
-    const response = await executeLlama({ prompt, task: "text-summarization" });
-
-    res.json({ status: "success", summary: response.response.trim() });
-
-  } catch (error) {
-    res.status(500).json({ error: "Text summarization failed", details: error.message });
-  }
+app.post("/api/nlp/summarize-text", logRequest, (req, res) => {
+  handleAIRequest(req, res, "text-summarization", (body) => {
+    const { text } = body;
+    if (!text) {
+      throw new Error("Text is required");
+    }
+    return `Summarize the following text into key points: "${text}".`;
+  });
 });
 
 // AI-Powered Language Translation
-app.post("/api/nlp/translate", async (req, res) => {
-  try {
-    const { text, targetLanguage } = req.body;
-    if (!text || !targetLanguage) return res.status(400).json({ error: "Text and target language are required" });
-
-    const prompt = `Translate this text: "${text}" into ${targetLanguage}.`;
-    const response = await executeLlama({ prompt, task: "language-translation" });
-
-    res.json({ status: "success", translatedText: response.response.trim() });
-
-  } catch (error) {
-    res.status(500).json({ error: "Translation failed", details: error.message });
-  }
+app.post("/api/nlp/translate", logRequest, (req, res) => {
+  handleAIRequest(req, res, "language-translation", (body) => {
+    const { text, targetLanguage } = body;
+    if (!text || !targetLanguage) {
+      throw new Error("Text and target language are required");
+    }
+    return `Translate this text: "${text}" into ${targetLanguage}.`;
+  });
 });
 
 // AI-Powered Speech-to-Text
-app.post("/api/nlp/speech-to-text", async (req, res) => {
-  try {
-    const { audioData } = req.body;
-    if (!audioData) return res.status(400).json({ error: "Audio data is required" });
-
-    const prompt = `Convert this speech data into text: "${audioData}".`;
-    const response = await executeLlama({ prompt, task: "speech-to-text" });
-
-    res.json({ status: "success", transcribedText: response.response.trim() });
-
-  } catch (error) {
-    res.status(500).json({ error: "Speech-to-text conversion failed", details: error.message });
-  }
+app.post("/api/nlp/speech-to-text", logRequest, (req, res) => {
+  handleAIRequest(req, res, "speech-to-text", (body) => {
+    const { audioData } = body;
+    if (!audioData) {
+      throw new Error("Audio data is required");
+    }
+    return `Convert this speech data into text: "${audioData}".`;
+  });
 });
+
 // AI-Powered Fraud Detection
-app.post("/api/banking/fraud-detection", async (req, res) => {
-  try {
-    const { transactionDetails } = req.body;
-    if (!transactionDetails) return res.status(400).json({ error: "Transaction details are required" });
-
-    const prompt = `Analyze this transaction: "${transactionDetails}". Determine if it is fraudulent (yes or no) and provide a confidence score (0-1).`;
-    const response = await executeLlama({ prompt, task: "fraud-detection" });
-
-    res.json({ status: "success", analysis: response.response.trim() });
-
-  } catch (error) {
-    res.status(500).json({ error: "Fraud detection failed", details: error.message });
-  }
+app.post("/api/banking/fraud-detection", logRequest, (req, res) => {
+  handleAIRequest(req, res, "fraud-detection", (body) => {
+    const { transactionDetails } = body;
+    if (!transactionDetails) {
+      throw new Error("Transaction details are required");
+    }
+    return `Analyze this transaction: "${transactionDetails}". Determine if it is fraudulent (yes or no) and provide a confidence score (0-1).`;
+  });
 });
 
 // AI-Powered Loan Eligibility Prediction
-app.post("/api/banking/loan-eligibility", async (req, res) => {
-  try {
-    const { customerProfile } = req.body;
-    if (!customerProfile) return res.status(400).json({ error: "Customer profile data is required" });
-
-    const prompt = `Analyze the financial standing of this customer profile: "${customerProfile}". Predict loan eligibility (approved/rejected) and provide a reasoning.`;
-    const response = await executeLlama({ prompt, task: "loan-eligibility" });
-
-    res.json({ status: "success", eligibility: response.response.trim() });
-
-  } catch (error) {
-    res.status(500).json({ error: "Loan eligibility check failed", details: error.message });
-  }
+app.post("/api/banking/loan-eligibility", logRequest, (req, res) => {
+  handleAIRequest(req, res, "loan-eligibility", (body) => {
+    const { customerProfile } = body;
+    if (!customerProfile) {
+      throw new Error("Customer profile data is required");
+    }
+    return `Analyze the financial standing of this customer profile: "${customerProfile}". Predict loan eligibility (approved/rejected) and provide a reasoning.`;
+  });
 });
 
 // AI-Powered Customer Support Chatbot
-app.post("/api/banking/chatbot", async (req, res) => {
-  try {
-    const { query } = req.body;
-    if (!query) return res.status(400).json({ error: "Query is required" });
-
-    const prompt = `Customer query: "${query}". Provide an accurate and helpful response.`;
-    const response = await executeLlama({ prompt, task: "banking-chatbot" });
-
-    res.json({ status: "success", response: response.response.trim() });
-
-  } catch (error) {
-    res.status(500).json({ error: "Chatbot response failed", details: error.message });
-  }
+app.post("/api/banking/chatbot", logRequest, (req, res) => {
+  handleAIRequest(req, res, "banking-chatbot", (body) => {
+    const { query } = body;
+    if (!query) {
+      throw new Error("Query is required");
+    }
+    return `Customer query: "${query}". Provide an accurate and helpful response.`;
+  });
 });
+
 app.post("/api/social/moderate-comment", logRequest, validateRequest(["comment"]), (req, res) => {
   handleAIRequest(req, res, "moderation", (body) => 
     `You are an AI moderator. You must respond with ONLY one of the following:
@@ -1451,26 +1368,25 @@ app.post("/api/social/moderate-comment", logRequest, validateRequest(["comment"]
 
 // AI-Powered Spending Pattern Analysis
 app.post("/api/analytics/spending-patterns", logRequest, validateRequest(["transactions"]), (req, res) => {
-  handleAIRequest(req, res, "spending-analysis", (query) => 
-    `Analyze these transactions: "${JSON.stringify(query.transactions)}". Identify key spending patterns and trends.`);
+  if (!req.body.transactions || !Array.isArray(req.body.transactions)) {
+    return res.status(400).json({ error: "Missing or invalid transactions parameter" });
+  }
+  handleAIRequest(req, res, "spending-patterns", (body) => `Identify key spending patterns and trends from transactions: ${body.transactions}.`);
 });
 
-// AI-Powered Risk Assessment
+
 app.post("/api/analytics/risk-assessment", logRequest, validateRequest(["customerProfile"]), (req, res) => {
-  handleAIRequest(req, res, "risk-analysis", (query) => 
-    `Assess the financial risk level for this customer profile: "${query.customerProfile}". Provide a risk rating (low, medium, high) and justification.`);
+  handleAIRequest(req, res, "risk-assessment", (body) => `Evaluate financial risk based on the customer profile: ${body.customerProfile}.`);
 });
-
-// AI-Powered Revenue Forecasting
 app.post("/api/analytics/revenue-forecast", logRequest, validateRequest(["historicalData"]), (req, res) => {
-  handleAIRequest(req, res, "revenue-forecasting", (query) => 
-    `Predict future revenue based on this historical financial data: "${JSON.stringify(query.historicalData)}". Provide a forecast for the next quarter.`);
+  handleAIRequest(req, res, "revenue-forecast", (body) => `Generate revenue predictions based on historical data: ${JSON.stringify(body.historicalData)}.`);
+});
+app.post("/api/analytics/customer-retention", logRequest, validateRequest(["customerHistory"]), (req, res) => {
+  handleAIRequest(req, res, "customer-retention", (body) => `Analyze customer retention risks based on history: ${JSON.stringify(body.customerHistory)}.`);
 });
 
-// AI-Powered Customer Retention Analysis
 app.post("/api/analytics/customer-retention", logRequest, validateRequest(["customerHistory"]), (req, res) => {
-  handleAIRequest(req, res, "customer-retention", (query) => 
-    `Analyze customer retention based on this historical data: "${JSON.stringify(query.customerHistory)}". Identify churn risks and retention strategies.`);
+  handleAIRequest(req, res, "customer-retention", (body) => `Analyze customer retention risks based on history: ${JSON.stringify(body.customerHistory)}.`);
 });
 
 // AI-Powered Fraud Detection
@@ -1481,110 +1397,48 @@ app.post("/api/banking/fraud-detection", logRequest, validateRequest(["transacti
  
 
 // AI-Powered Customer Spending Analytics
-
-app.post("/api/analytics/spending-patterns", logRequest, validateRequest(["transactions"]), async (req, res) => {
-  try {
-    const prompt = `Analyze these transactions: "${JSON.stringify(req.body.transactions)}". Identify key spending patterns and trends.`;
-
-    console.log("Generated prompt:", prompt); // Debugging
-
-    const aiResponse = await handleAIRequest(req, res, "spending-analysis", () => prompt);
-
-    console.log("AI Response:", aiResponse); // Debugging
-
-    if (!aiResponse || !aiResponse.response || aiResponse.response.trim() === "") {
-      return res.status(500).json({
-        error: "AI response is empty",
-        details: aiResponse
-      });
+// 🟢 Analyze Spending Patterns
+app.post("/api/analytics/spending-patterns", logRequest, (req, res) => {
+  handleAIRequest(req, res, "spending-analysis", (body) => {
+    const { transactions } = body;
+    if (!Array.isArray(transactions) || transactions.length === 0) {
+      throw new Error("Transactions must be a non-empty array");
     }
-
-    res.json({ status: "success", insights: aiResponse.response.trim() });
-
-  } catch (error) {
-    console.error("Error in spending pattern analysis:", error);
-    res.status(500).json({ error: "Spending analysis failed", details: error.message });
-  }
+    return JSON.stringify(transactions);
+  });
 });
-app.post("/api/analytics/risk-assessment", logRequest, validateRequest(["customerProfile"]), async (req, res) => {
-  try {
-    const { customerProfile } = req.body;
 
+// 🟢 AI-Powered Risk Assessment
+app.post("/api/analytics/risk-assessment", logRequest, validateRequest(["customerProfile"]), (req, res) => {
+  handleAIRequest(req, res, "risk-assessment", (body) => {
+    const { customerProfile } = body;
     if (!customerProfile || typeof customerProfile !== "string") {
-      return res.status(400).json({ error: "Invalid or missing customerProfile" });
+      throw new Error("Invalid or missing customerProfile");
     }
+    return `Assess the financial risk level for this customer profile: "${customerProfile}". Provide a risk rating (low, medium, high) and recommendations.`;
+  });
+});
 
-    console.log("Received customerProfile:", customerProfile); // Debugging
-
-    const prompt = `Assess the financial risk level for the following customer profile: "${customerProfile}". Provide a risk level and recommendations.`;
-
-    const aiResponse = await handleAIRequest(req, res, "risk-assessment", () => prompt);
-
-    console.log("AI Response:", aiResponse); // Debugging
-
-    if (!aiResponse || !aiResponse.response || aiResponse.response.trim() === "") {
-      return res.status(500).json({
-        error: "AI response is empty",
-        details: aiResponse
-      });
+// 🟢 AI-Powered Revenue Forecasting
+app.post("/api/analytics/revenue-forecast", (req, res) => {
+  handleAIRequest(req, res, "revenue-forecasting", (body) => {
+    const { historicalData } = body;
+    if (!historicalData || !Array.isArray(historicalData) || historicalData.length === 0) {
+      throw new Error("Historical financial data is required as a non-empty array");
     }
-
-    res.json({ status: "success", riskLevel: aiResponse.response.trim() });
-
-  } catch (error) {
-    console.error("Error in risk assessment:", error);
-    res.status(500).json({ error: "Risk assessment failed", details: error.message });
-  }
+    return `Predict future revenue based on this historical financial data: "${JSON.stringify(historicalData)}". Provide a forecast for the next quarter.`;
+  });
 });
 
-
-
-// AI-Powered Risk Assessment
-app.post("/api/analytics/risk-assessment", async (req, res) => {
-  try {
-    const { customerProfile } = req.body;
-    if (!customerProfile) return res.status(400).json({ error: "Customer profile data is required" });
-
-    const prompt = `Assess the financial risk level for this customer profile: "${customerProfile}". Provide a risk rating (low, medium, high) and justification.`;
-    const response = await executeLlama({ prompt, task: "risk-analysis" });
-
-    res.json({ status: "success", riskLevel: response.response.trim() });
-
-  } catch (error) {
-    res.status(500).json({ error: "Risk assessment failed", details: error.message });
-  }
-});
-
-// AI-Powered Revenue Forecasting
-app.post("/api/analytics/revenue-forecast", async (req, res) => {
-  try {
-    const { historicalData } = req.body;
-    if (!historicalData) return res.status(400).json({ error: "Historical financial data is required" });
-
-    const prompt = `Predict future revenue based on this historical financial data: "${JSON.stringify(historicalData)}". Provide a forecast for the next quarter.`;
-    const response = await executeLlama({ prompt, task: "revenue-forecasting" });
-
-    res.json({ status: "success", forecast: response.response.trim() });
-
-  } catch (error) {
-    res.status(500).json({ error: "Revenue forecasting failed", details: error.message });
-  }
-});
-
-// AI-Powered Customer Retention Analysis
-app.post("/api/analytics/customer-retention", async (req, res) => {
-  try {
-    const { customerHistory } = req.body;
-    if (!customerHistory) return res.status(400).json({ error: "Customer history data is required" });
-
-    const prompt = `Analyze customer retention based on this historical data: "${JSON.stringify(customerHistory)}". Identify churn risks and retention strategies.`;
-    const response = await executeLlama({ prompt, task: "customer-retention" });
-
-    res.json({ status: "success", insights: response.response.trim() });
-
-  } catch (error) {
-    res.status(500).json({ error: "Customer retention analysis failed", details: error.message });
-  }
+// 🟢 AI-Powered Customer Retention Analysis
+app.post("/api/analytics/customer-retention", (req, res) => {
+  handleAIRequest(req, res, "customer-retention", (body) => {
+    const { customerHistory } = body;
+    if (!customerHistory || !Array.isArray(customerHistory) || customerHistory.length === 0) {
+      throw new Error("Customer history data is required as a non-empty array");
+    }
+    return `Analyze customer retention based on this historical data: "${JSON.stringify(customerHistory)}". Identify churn risks and retention strategies.`;
+  });
 });
 
 
