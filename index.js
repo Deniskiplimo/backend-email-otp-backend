@@ -763,13 +763,14 @@ async function waitForServer(url, retries = 5, delayMs = 2000) {
     }
   }
 }
+
 const nThreadsDefault = Math.min(8, os.cpus().length);
 
 const analytics = {
   requestCount: 0,
   errorCount: 0,
   executionTimes: [],
-  taskStats: {},
+  taskStats: {}, 
   minExecutionTime: null,
   maxExecutionTime: null,
 };
@@ -866,7 +867,7 @@ const handleAIRequest = async (req, res, task, promptTemplate) => {
     analytics.errorCount++;
     handleError(res, `${task} failed`, error);
   }
-};
+};  
 
 // Get AI Analytics with Filtering
 const getAnalytics = async (req, res) => {
@@ -1086,6 +1087,33 @@ const logRequest = (req, res, next) => {
   console.log(`📜 Request Body:`, req.body);
   next();
 };
+// AI Task Handler
+const handleAITask = async (req, res, prompt, task, options = {}) => {
+  try {
+    if (!prompt || typeof prompt !== "string" || prompt.trim() === "") {
+      return res.status(400).json({ error: "Invalid prompt", details: "Prompt must be a non-empty string." });
+    }
+
+    console.log(`🔄 Processing AI task: ${task} with prompt: "${prompt}"`);
+
+    const startTime = Date.now();
+    const response = await executeLlama({ prompt, task, ...options });
+
+    // Handle missing or empty response
+    if (!response || !response.response || typeof response.response !== "string" || response.response.trim() === "") {
+      console.error("❌ AI model returned an empty or invalid response.");
+      return res.status(500).json({ error: "AI model returned an invalid response" });
+    }
+
+    console.log(`✅ AI task '${task}' completed in ${Date.now() - startTime}ms`);
+    
+    return res.json({ status: "success", response: response.response.trim() });
+
+  } catch (error) {
+    console.error(`❌ AI task '${task}' failed:`, error);
+    return res.status(500).json({ error: `${task} failed`, details: error.message });
+  }
+};
 
 // ✅ Enhanced API Routes with logging
 app.post("/api/llama", logRequest, async (req, res) => {
@@ -1266,36 +1294,228 @@ app.post("/api/ai/sentiment", async (req, res) => {
 });
 // API to Get Analytics
 app.get("/api/analytics", (req, res) => {
-  handleAIRequest(req, res, "analytics", (query) => `Get analytics data for task: ${query.task || "all"}, time range: ${query.startTime || "N/A"} - ${query.endTime || "N/A"}`);
-});
+  // Query parameters can be used to filter the analytics data
+  const { task, startTime, endTime } = req.query;
+  
+  // Logic to generate or retrieve specific analytics data (could be filtered based on task and time range)
+  const analyticsData = {
+    totalRequests: analytics.totalRequests,
+    totalSuccess: analytics.totalSuccess,
+    totalErrors: analytics.totalErrors,
+    avgExecutionTime: analytics.totalRequests ? (analytics.totalExecutionTime / analytics.totalRequests).toFixed(2) : 0,
+    taskSpecificData: task ? `Analytics for task: ${task}` : 'All tasks analytics'
+  };
 
-// API to Get Errors Analytics
-app.get("/api/analytics/errors", (req, res) => {
-  handleAIRequest(req, res, "analytics-errors", () => "Get error analytics.");
-});
-
-// API to Get Model Analytics
-app.get("/api/analytics/model", (req, res) => {
-  handleAIRequest(req, res, "analytics-model", () => "Get model analytics.");
-});
-
-// API to Get Task-Specific Analytics
-app.get("/api/analytics/task/:task", (req, res) => {
-  handleAIRequest(req, res, "analytics-task", (query) => `Get analytics for task: ${req.params.task}`);
-});
-
-// API to Get Analytics by Time Range
-app.get("/api/analytics/time", (req, res) => {
-  handleAIRequest(req, res, "analytics-time", (query) => {
-    console.log("Received Query:", query); // Debugging
-    const startTime = query.startTime || "N/A";
-    const endTime = query.endTime || "N/A";
-    return `Get analytics for time range: ${startTime} - ${endTime}`;
-  }).catch((error) => {
-    console.error("Error handling AI request:", error);
-    res.status(500).json({ error: "Internal Server Error", details: error.message });
+  res.json({
+    success: true,
+    message: "Analytics data fetched successfully",
+    data: analyticsData
   });
 });
+
+
+// API to Get Errors Analytics
+app.get("/api/analytics/model", async (req, res) => {
+  try {
+    console.log("Fetching AI model analytics...");
+
+    const aiResponse = await handleAIRequest(req, res, "analytics-model", () => "Get model analytics.");
+
+    // Ensure AI response is valid
+    if (!aiResponse || !aiResponse.response || aiResponse.response.trim() === "") {
+      console.error("❌ AI response is empty for /api/analytics/model");
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch AI model analytics",
+        error: "AI response is empty",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Model analytics fetched successfully",
+      analytics: aiResponse.response.trim(),
+    });
+
+  } catch (error) {
+    console.error("❌ Error in /api/analytics/model:", error);
+    if (!res.headersSent) { // Ensure response is sent only once
+      res.status(500).json({
+        success: false,
+        message: "Internal server error while fetching model analytics",
+        error: error.message,
+      });
+    }
+  }
+});
+
+
+
+// API to Get Model Analytics
+app.get("/api/analytics/model", async (req, res) => {
+  try {
+    console.log("Fetching AI model analytics...");
+
+    const aiResponse = await handleAIRequest(req, res, "analytics-model", () => "Get model analytics.");
+
+    // Ensure AI response is valid
+    if (!aiResponse || !aiResponse.response || aiResponse.response.trim() === "") {
+      console.error("❌ AI response is empty for /api/analytics/model");
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch AI model analytics",
+        error: "AI response is empty",
+      });
+    }
+
+    // Send the success response only once
+    res.json({
+      success: true,
+      message: "Model analytics fetched successfully",
+      analytics: aiResponse.response.trim(),
+    });
+
+  } catch (error) {
+    // Check if response was already sent
+    if (!res.headersSent) {
+      console.error("❌ Error in /api/analytics/model:", error);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error while fetching model analytics",
+        error: error.message,
+      });
+    } else {
+      console.error("❌ Error after response sent:", error);
+    }
+  }
+});
+
+ 
+// API to Get Task-Specific Analytics
+app.get("/api/analytics/task/:task", async (req, res) => {
+  try {
+    const taskName = req.params.task;
+
+    if (!taskName) {
+      return res.status(400).json({ error: "Task parameter is required" });
+    }
+
+    console.log(`Fetching analytics for task: ${taskName}`);
+
+    const response = await handleAIRequest(req, res, "analytics-task", () => `Get analytics for task: ${taskName}`);
+
+    // Check if response is a valid string or object
+    if (!response || (typeof response !== 'string' && typeof response !== 'object')) {
+      console.error(`AI response is invalid for task: ${taskName}`);
+      return res.status(500).json({
+        error: "Invalid AI response",
+        details: {
+          status: "failure",
+          message: "Received an invalid response from AI service",
+          response: response,
+        },
+      });
+    }
+
+    // If the response is an object, convert it to a string (JSON)
+    if (typeof response === 'object') {
+      response = JSON.stringify(response, null, 2); // Pretty print if it's an object
+    }
+
+    res.json({ status: "success", task: taskName, data: response });
+  } catch (error) {
+    console.error(`Error in /api/analytics/task/${req.params.task}:`, error);
+    res.status(500).json({ error: "Internal Server Error", details: error.message });
+  }
+});
+
+const errorLogs = []; // Store error logs here
+
+app.get("/api/analytics/errors", async (req, res) => {
+  try {
+    console.log("Fetching error logs...");
+
+    if (!errorLogs.length) {
+      return res.status(200).json({
+        success: true,
+        message: "No errors logged.",
+        logs: []
+      });
+    }
+
+    const aiResponse = await handleAIRequest(req, res, "fetch_errors", () => JSON.stringify(errorLogs));
+
+    if (!aiResponse || !aiResponse.response || aiResponse.response.trim() === "") {
+      console.error("❌ AI response is empty for error logs.");
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch error analytics",
+        error: "AI response is empty"
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Error logs fetched successfully",
+      logs: JSON.parse(aiResponse.response) // Ensure it's valid JSON
+    });
+
+  } catch (error) {
+    console.error("❌ Error fetching error logs:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error while fetching logs",
+      error: error.message
+    });
+  }
+});
+
+
+// API to Get Analytics by Time Range
+const { stringify } = require("flatted"); // Alternative to handle circular references
+
+app.get("/api/analytics/time", async (req, res) => {
+    try {
+        const aiResponse = await getAIAnalyticsTime(); // Assuming this is your AI API call
+
+        console.log("Raw AI Response:", aiResponse); // Log AI response before processing
+
+        if (!aiResponse || Object.keys(aiResponse).length === 0) {
+            return res.status(500).json({ success: false, message: "AI response is empty" });
+        }
+
+        // Ensure the response is serializable
+        const safeData = JSON.parse(JSON.stringify(aiResponse, (key, value) =>
+            key === "socket" || key === "parser" ? undefined : value
+        ));
+
+        res.json({
+            success: true,
+            message: "Analytics data fetched",
+            data: safeData
+        });
+
+    } catch (error) {
+        console.error("Error fetching analytics:", error);
+
+        // Handle circular JSON error
+        if (error.message.includes("circular structure")) {
+            return res.status(500).json({
+                success: false,
+                message: "Server error: Circular reference detected",
+                error: stringify(error) // Use 'flatted' to handle circular structures
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            message: "Internal server error",
+            error: error.message
+        });
+    }
+});
+
+
  
 
 // API to Stream Analytics Data
@@ -1334,11 +1554,15 @@ app.use("/api/analytics/graphql", graphqlHTTP({
 app.get("/api/analytics/dashboard", (req, res) => {
   handleAIRequest(req, res, "analytics-dashboard", () => "Get dashboard analytics data.");
 });
-
-// API to Get AI Analytics
 app.get("/api/ai/analytics", (req, res) => {
   handleAIRequest(req, res, "analytics-ai", (query) => {
-    const { task, startTime, endTime } = query;
+    const { task, startTime, endTime, errorsOnly } = query;
+
+    // Ensure analytics object exists
+    if (!analytics || !analytics.executionTimes || !analytics.taskStats) {
+      console.error("Analytics data is missing");
+      return "Error: Analytics data is not available.";
+    }
 
     let filteredRequests = analytics.executionTimes.map((time, index) => ({
       task: Object.keys(analytics.taskStats)[index] || "unknown",
@@ -1356,16 +1580,22 @@ app.get("/api/ai/analytics", (req, res) => {
       filteredRequests = filteredRequests.filter((entry) => entry.timestamp >= start && entry.timestamp <= end);
     }
 
+    // Apply errorsOnly filter if requested
+    if (errorsOnly === "true") {
+      filteredRequests = filteredRequests.filter((entry) => entry.task === "error");
+    }
+
     const executionTimes = filteredRequests.map((entry) => entry.executionTime);
     const totalRequests = executionTimes.length;
-    const totalErrors = analytics.errorCount;
+    const totalErrors = analytics.errorCount || 0;
     const avgExecutionTime = totalRequests ? executionTimes.reduce((a, b) => a + b, 0) / totalRequests : 0;
     const minExecutionTime = executionTimes.length ? Math.min(...executionTimes) : null;
     const maxExecutionTime = executionTimes.length ? Math.max(...executionTimes) : null;
     const variance = executionTimes.length > 1 ? executionTimes.reduce((sum, val) => sum + Math.pow(val - avgExecutionTime, 2), 0) / executionTimes.length : 0;
     const stdDeviation = Math.sqrt(variance);
 
-    return {
+    // ✅ Return as a **string** instead of an object
+    return JSON.stringify({
       totalRequests,
       totalErrors,
       avgExecutionTime: avgExecutionTime.toFixed(2),
@@ -1373,10 +1603,10 @@ app.get("/api/ai/analytics", (req, res) => {
       maxExecutionTime,
       stdDeviation: stdDeviation.toFixed(2),
       taskStats: analytics.taskStats,
-    };
+    });
   });
 });
- 
+
 
 // AI Routes
 app.post("/api/ai/analyze-data", logRequest, validateRequest(["dataset", "question"]), (req, res) => {

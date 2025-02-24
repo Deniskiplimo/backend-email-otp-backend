@@ -962,16 +962,42 @@
     "summary": "Get analytics for a specific task",
     "tags": ["Llama"],
     "parameters": [
-      {"name": "task", "in": "path", "required": true, "type": "string", "description": "Task name"}
+      {
+        "name": "task",
+        "in": "path",
+        "required": true,
+        "type": "string",
+        "description": "Task name"
+      }
     ],
     "responses": {
       "200": {
         "description": "Task execution statistics",
         "schema": { "$ref": "#/definitions/TaskResponse" }
+      },
+      "400": {
+        "description": "Bad request. Task parameter is required or invalid.",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "error": { "type": "string", "example": "Task parameter is required" }
+          }
+        }
+      },
+      "500": {
+        "description": "Internal server error while fetching analytics",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "error": { "type": "string", "example": "Internal Server Error" },
+            "details": { "type": "string", "example": "Error details" }
+          }
+        }
       }
     }
   }
-},
+}
+,
 "/api/analytics/time": {
   "get": {
     "summary": "Get analytics filtered by time",
