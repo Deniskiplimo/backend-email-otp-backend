@@ -1,15 +1,28 @@
-import argparse
 import os
 import sys
 import webbrowser
 import cv2
 import ffmpeg
 
+import codecs
+
+sys.stdout = codecs.getwriter("utf-8")(sys.stdout.detach())  # Force UTF-8 encoding
+
+def ensure_file_exists(file_path):
+    """Ensure the given file exists, otherwise warn the user."""
+    if not os.path.exists(file_path):
+        print(f"⚠️ Warning: {file_path} not found. Please provide a valid video file.", file=sys.stderr)
+        sys.exit(1)
+
 def process_video(input_video, text, output, format):
     """Overlay text on an existing video."""
     try:
-        if os.path.dirname(output):  # Only create if a directory is specified
-            os.makedirs(os.path.dirname(output), exist_ok=True)
+        ensure_file_exists(input_video)  # Check if input video exists
+
+        # Ensure the output directory exists
+        output_dir = os.path.dirname(output)
+        if output_dir and not os.path.exists(output_dir):
+            os.makedirs(output_dir, exist_ok=True)
 
         output_file = f"{output}.{format}"
 
@@ -50,6 +63,9 @@ def process_video(input_video, text, output, format):
             ffmpeg.input(output_file).output(temp_output, vcodec="copy", acodec="aac", shortest=None).run(overwrite_output=True)
             os.replace(temp_output, output_file)
 
+        print(f"✅ Video processing complete: {output_file}")
+
+        # Open the generated video in the default web browser
         webbrowser.open(f"file://{os.path.abspath(output_file)}")
 
         return output_file
@@ -57,14 +73,16 @@ def process_video(input_video, text, output, format):
         print(f"❌ Error processing video: {e}", file=sys.stderr)
         sys.exit(1)
 
+import argparse
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Overlay text on a video of running dogs.")
+    parser = argparse.ArgumentParser(description="Overlay text on a video.")
     parser.add_argument("--text", required=True, help="Text to overlay on the video")
     parser.add_argument("--input", required=True, help="Path to the input video file")
     parser.add_argument("--output", required=True, help="Output video file name (without extension)")
     parser.add_argument("--format", default="mp4", choices=["mp4", "avi", "mov"], help="Video format")
 
     args = parser.parse_args()
-    
+
     video_path = process_video(args.input, args.text, args.output, args.format)
     print(video_path)
