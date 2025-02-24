@@ -1,0 +1,15 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 14
+    },
+    "auditLog": "C:\\Users\\d.kiplimo\\backend-email-otp-backend\\utils\\logs\\.cf0bc906e9c58aed27561dd7ef46e0da2347e4c4-audit.json",
+    "files": [
+        {
+            "date": 1740036637511,
+            "name": "C:\\Users\\d.kiplimo\\backend-email-otp-backend\\utils\\logs\\error-2025-02-20.log",
+            "hash": "d16d57e90ef7893395e7e1c56f48fa260256ac37ca393cf49ef2d0e297994488"
+        }
+    ],
+    "hashType": "sha256"
+}

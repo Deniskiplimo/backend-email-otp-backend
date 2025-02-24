@@ -1,0 +1,3 @@
+Scene 1: Generate a video description for: "A dog running in a field." - A futuristic city skyline at sunset, flying cars pass by.
+Scene 2: Generate a video description for: "A dog running in a field." - A scientist in a lab, analyzing a glowing blue liquid.
+Scene 3: Generate a video description for: "A dog running in a field." - A spaceship launching into the night sky, fire and smoke billowing.

@@ -5,12 +5,13 @@ const { generateCodeWithCodeLlama } = require('./codeLlama');
 const path = require('path');
 const { llamacpp, streamText } = require("modelfusion");
 const ip = '8.8.8.8';
+const open = require("open");
 const os = require('os');
 const { body, validationResult ,query} = require("express-validator");
 const PORT = 4000;
 const { parentPort, workerData, isMainThread } = require("worker_threads");
 const cors = require("cors");
-
+      
 const morgan = require("morgan");
 const authenticateRefreshToken = require('./middleware/authenticateRefreshToken');
 const express = require('express');   
@@ -659,11 +660,14 @@ async function downloadFile(url, outputPath) {
   }
 
   console.log(`Downloading ${outputPath}...`);
+  console.log(`Starting AI server on port ${port}...`);
+    const command = `./llamafile.exe -m tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf --nobrowser --port ${port}`;
+    
   const writer = fs.createWriteStream(outputPath);
   const response = await axios({ url, method: "GET", responseType: "stream" });
   const totalLength = response.headers["content-length"];
   let downloadedLength = 0;
-
+ 
   response.data.on("data", (chunk) => {
     downloadedLength += chunk.length;
     process.stdout.write(`Downloaded ${(downloadedLength / totalLength * 100).toFixed(2)}%\r`);
@@ -680,7 +684,14 @@ async function downloadFile(url, outputPath) {
     writer.on("error", reject);
   });
 }
-
+function killPreviousLlama() {
+  try {
+    execSync("pkill -f llamafile.exe", { stdio: "ignore" }); // Linux/macOS
+    execSync("taskkill /IM llamafile.exe /F", { stdio: "ignore" }); // Windows
+  } catch (err) {
+    console.log("No previous Llama instance found.");
+  }
+}
 // ✅ Function to start the AI server
 async function setupModel(port) {
   try {
@@ -694,12 +705,24 @@ async function setupModel(port) {
     );
 
     console.log(`Starting AI server on port ${port}...`);
-    const command = `./llamafile.exe -m tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf --nobrowser --port ${port}`;
-    exec(command, (error, stdout, stderr) => {
-      if (error) return console.error(`Error: ${error.message}`);
-      if (stderr) return console.error(`stderr: ${stderr}`);
-      console.log(stdout);
+
+    const command = process.platform === "win32"
+      ? `llamafile.exe -m tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf --nobrowser --port ${port}`
+      : `./llamafile.exe -m tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf --nobrowser --port ${port}`;
+
+    const processInstance = exec(command);
+
+    processInstance.stdout.on("data", (data) => {
+      console.log(`Llama Output: ${data}`);
     });
+
+    processInstance.stderr.on("data", (data) => {
+      console.error(`Llama Error: ${data}`);
+    });
+
+    await waitForServer(`http://localhost:${port}`);
+
+    console.log(`✅ Llama server started successfully on port ${port}`);
   } catch (error) {
     console.error("Setup error:", error);
     throw error;
@@ -724,31 +747,101 @@ async function waitForServer(url, retries = 5, delayMs = 2000) {
   }
 }
 
-const nThreadsDefault = Math.max(1, os.cpus().length - 1);
+const nThreadsDefault = Math.min(8, os.cpus().length); // Cap at 8 for efficiency
 
 async function executeLlama(options = {}) {
-  const {
-    prompt,
-    model = "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
-    task = "default",
-    socket = null,
-    maxTokens = 256,
-    temperature = 0.7,
-    topK = 50,
-    
-    nThreads = Math.max(2, os.cpus().length - 1), // Optimize thread allocation
-  } = options;
+  try {
+    if (!options || typeof options !== "object") {
+      throw new Error("Invalid options object");
+    }
 
-  if (!prompt || typeof prompt !== "string" || prompt.trim() === "") {
-    console.error("❌ Invalid prompt received:", prompt);
-    return Promise.reject({ message: "❌ Invalid prompt", details: "Prompt must be a non-empty string." });
+    const {
+      prompt,
+      model = "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+      task = "default",
+      socket = null,
+      maxTokens = 128, // Faster response
+      temperature = 0.6, // More deterministic
+      topK = 100, // More accurate choices
+      topP = 0.9, // Probability mass tuning
+      nThreads = nThreadsDefault, // Optimized for performance
+      stream = false, // 🔹 New: Support for streaming responses
+    } = options;
+
+    // Validate prompt
+    if (!prompt || typeof prompt !== "string" || prompt.trim() === "") {
+      console.error("❌ Invalid prompt received:", prompt);
+      return Promise.reject({
+        message: "❌ Invalid prompt",
+        details: "Prompt must be a non-empty string.",
+      });
+    }
+
+    // Validate numeric parameters
+    if (![maxTokens, temperature, topK, topP].every((val) => typeof val === "number" && val > 0)) {
+      return Promise.reject({
+        message: "❌ Invalid parameters",
+        details: "maxTokens, temperature, topK, and topP must be positive numbers.",
+      });
+    }
+
+    console.log(`📝 Running Llama with prompt: "${prompt}" using ${nThreads} threads`);
+
+    const startTime = Date.now();
+
+    const response = await runLlamaModel({
+      prompt,
+      model,
+      socket,
+      maxTokens,
+      temperature,
+      topK,
+      topP,
+      nThreads,
+      stream, // 🔹 New: Supports streaming
+    });
+
+    console.log(`✅ Llama completed in ${Date.now() - startTime}ms`);
+
+    return response;
+  } catch (error) {
+    console.error("❌ Error executing Llama:", error.message || error);
+    return Promise.reject({ message: "Execution failed", details: error.message });
   }
-
-  console.log(`📝 Running Llama with prompt: "${prompt}" using ${nThreads} threads`);
-
-  return runLlamaModel({ prompt, model, socket, maxTokens, temperature, topK, nThreads });
 }
+// Utility function for error handling
+const handleError = (res, message, error) => {
+  console.error(`❌ ${message}:`, error);
+  res.status(500).json({ error: message, details: error.message || error });
+};
 
+// AI Task Handler
+const handleAITask = async (req, res, prompt, task, options = {}) => {
+  try {
+    if (!prompt || typeof prompt !== "string" || prompt.trim() === "") {
+      return res.status(400).json({ error: "Invalid prompt", details: "Prompt must be a non-empty string." });
+    }
+
+    console.log(`🔄 Processing AI task: ${task} with prompt: "${prompt}"`);
+
+    const startTime = Date.now();
+    const response = await executeLlama({ prompt, task, ...options });
+
+    // Handle missing or empty response
+    if (!response || !response.response || typeof response.response !== "string" || response.response.trim() === "") {
+      console.error("❌ AI model returned an empty or invalid response.");
+      return res.status(500).json({ error: "AI model returned an invalid response" });
+    }
+
+    console.log(`✅ AI task '${task}' completed in ${Date.now() - startTime}ms`);
+    
+    return res.json({ status: "success", response: response.response.trim() });
+
+  } catch (error) {
+    console.error(`❌ AI task '${task}' failed:`, error);
+    handleError(res, `${task} failed`, error);
+  }
+};
 
 async function runLlamaModel({ prompt, model, socket, maxTokens, temperature, topK, nThreads, port = PORT }) { 
   return new Promise(async (resolve, reject) => {
@@ -813,7 +906,19 @@ async function runLlamaModel({ prompt, model, socket, maxTokens, temperature, to
   });
 }
 
-
+async function generateImage(prompt, outputPath) {
+  try {
+    console.log(`🎨 Generating image: "${prompt}"`);
+    
+    // Simulated Stable Diffusion API call (Replace with real API)
+    fs.copyFileSync("placeholder.jpg", outputPath); // Simulating image generation
+    
+    return fs.existsSync(outputPath);
+  } catch (error) {
+    console.error("❌ Image generation failed:", error);
+    return false;
+  }
+}
 // Check if the server is available
 async function checkServerAvailability(port) {
     console.log("🔍 Checking server availability on port:", port);
@@ -1025,24 +1130,8 @@ app.post(
   }
 );
 
-// Utility function for error handling
-const handleError = (res, message, error) => {
-  console.error(`❌ ${message}:`, error);
-  res.status(500).json({ error: message, details: error.message || error });
-};
 
-// AI Task Handler
-const handleAITask = async (req, res, prompt, task, options = {}) => {
-  try {
-    const response = await executeLlama({ prompt, task, ...options });
-    if (!response || !response.response || response.response.trim() === "") {
-      return res.status(500).json({ error: "AI model returned an invalid response" });
-    }
-    res.json({ status: "success", response: response.response.trim() });
-  } catch (error) {
-    handleError(res, `${task} failed`, error);
-  }
-};
+
 
 // AI Routes
 app.post("/api/ai/generate-blog", async (req, res) => {
@@ -1127,24 +1216,79 @@ app.post("/api/ai/grammar-check", logRequest, validateRequest(["text"]), (req, r
 });
 
 app.post("/api/ai/chatbot", logRequest, validateRequest(["message"]), (req, res) => {
-  handleAIRequest(req, res, "chatbot", (body) => body.message);
-});
-
-app.post("/api/ai/text-to-video", logRequest, validateRequest(["text"]), async (req, res) => {
   try {
-    const prompt = `Generate a video for: \"${req.body.text}\"`;
-    const response = await executeLlama({ prompt, task: "text-to-video", n: 1, maxTokens: 256, temperature: 0.7, topK: 50, nThreads: 3 });
-    if (!response || !response.response.trim()) {
-      return res.status(500).json({ error: "Failed to generate video" });
+    const message = req.body.message;
+
+    if (!message || typeof message !== "string" || message.trim() === "") {
+      return res.status(400).json({ error: "Invalid input: 'message' must be a non-empty string." });
     }
-    const filePath = path.join(__dirname, "generated_videos", `video_${Date.now()}.txt`);
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, response.response.trim(), "utf8");
-    res.json({ status: "success", videoDescription: response.response.trim(), savedPath: filePath });
+
+    console.log(`📩 Incoming Chatbot Message: "${message}"`);
+
+    handleAIRequest(req, res, "chatbot", (body) => body.message);
   } catch (error) {
-    handleError(res, error, "Text-to-video request failed");
+    console.error("❌ Chatbot Request Error:", error);
+    res.status(500).json({ error: "Internal Server Error", details: error.message });
   }
 });
+    
+ 
+     
+// Ensure the videos directory exists
+const videosDir = path.join(__dirname, "generated_videos");
+if (!fs.existsSync(videosDir)) {
+  fs.mkdirSync(videosDir, { recursive: true });
+}
+
+app.post("/api/ai/text-to-video", async (req, res) => {
+  try {
+    const { text } = req.body;
+    if (!text) {
+      return res.status(400).json({ error: "Missing required 'text' field" });
+    }
+
+    console.log(`🎥 Generating video for: "${text}"`);
+
+    // Define paths
+    const pythonScript = path.join(__dirname, "generate_video.py");
+    const videoFilename = `${text.replace(/\s+/g, "_")}.mp4`;
+    const videoPath = path.join(videosDir, videoFilename);
+
+    // Use appropriate Python executable
+    const pythonExecutable =
+      process.platform === "win32"
+        ? path.join(__dirname, "venv", "Scripts", "python.exe")
+        : path.join(__dirname, "venv", "bin", "python");
+
+    // Execute Python script
+    const command = `"${pythonExecutable}" "${pythonScript}" --text "${text}" --output "${videoPath}"`;
+    exec(command, (error, stdout, stderr) => {
+      console.log(`📜 Raw stdout: ${stdout.trim()}`);
+      console.log(`📜 Raw stderr: ${stderr.trim()}`);
+
+      if (error) {
+        console.error(`❌ Video generation error: ${error.message}`);
+        return res.status(500).json({ error: "Video generation failed", details: stderr.trim() });
+      }
+
+      const generatedVideoPath = stdout.trim();
+      if (!fs.existsSync(generatedVideoPath)) {
+        console.error(`❌ Video file not found: ${generatedVideoPath}`);
+        return res.status(500).json({ error: "Video file not found after generation" });
+      }
+
+      const videoUrl = `${req.protocol}://${req.get("host")}/videos/${videoFilename}`;
+      res.json({ status: "success", videoUrl });
+    });
+
+  } catch (error) {
+    console.error("❌ Error processing request:", error);
+    res.status(500).json({ error: "Internal Server Error", details: error.message });
+  }
+}); 
+  
+// Serve videos statically
+app.use("/videos", express.static(videosDir));
 
 // AI-Powered Sentiment Analysis
 app.post("/api/social/sentiment-analysis", logRequest, validateRequest(["text"]), (req, res) => {
