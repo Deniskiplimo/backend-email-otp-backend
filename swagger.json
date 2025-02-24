@@ -915,6 +915,161 @@
 }
 
 , 
+
+"/api/analytics": {
+  "get": {
+    "summary": "Get overall analytics",
+    "tags": ["Llama"],
+    "parameters": [
+      {"name": "task", "in": "query", "type": "string", "description": "Filter by task"},
+      {"name": "startTime", "in": "query", "type": "string", "format": "date-time", "description": "Start time for filtering"},
+      {"name": "endTime", "in": "query", "type": "string", "format": "date-time", "description": "End time for filtering"}
+    ],
+    "responses": {
+      "200": {
+        "description": "Analytics data",
+        "schema": { "$ref": "#/definitions/AnalyticsResponse" }
+      }
+    }
+  }
+},
+"/api/analytics/errors": {
+  "get": {
+    "summary": "Get error analytics",
+    "tags": ["Llama"],
+    "responses": {
+      "200": {
+        "description": "Error statistics",
+        "schema": { "$ref": "#/definitions/ErrorResponse" }
+      }
+    }
+  }
+},
+"/api/analytics/model": {
+  "get": {
+    "summary": "Get model analytics",
+    "tags": ["Llama"],
+    "responses": {
+      "200": {
+        "description": "Model execution statistics",
+        "schema": { "$ref": "#/definitions/ModelResponse" }
+      }
+    }
+  }
+},
+"/api/analytics/task/{task}": {
+  "get": {
+    "summary": "Get analytics for a specific task",
+    "tags": ["Llama"],
+    "parameters": [
+      {"name": "task", "in": "path", "required": true, "type": "string", "description": "Task name"}
+    ],
+    "responses": {
+      "200": {
+        "description": "Task execution statistics",
+        "schema": { "$ref": "#/definitions/TaskResponse" }
+      }
+    }
+  }
+},
+"/api/analytics/time": {
+  "get": {
+    "summary": "Get analytics filtered by time",
+    "tags": ["Llama"],
+    "parameters": [
+      {"name": "startTime", "in": "query", "type": "string", "format": "date-time", "description": "Start time for filtering"},
+      {"name": "endTime", "in": "query", "type": "string", "format": "date-time", "description": "End time for filtering"}
+    ],
+    "responses": {
+      "200": {
+        "description": "Time-based analytics",
+        "schema": { "$ref": "#/definitions/TimeResponse" }
+      }
+    }
+  }
+
+},
+
+ 
+"/api/ai/analytics": {
+      "get": {
+        "tags": ["Llama"],
+        "summary": "Retrieve AI analytics",
+        "description": "Fetch analytics data with optional filtering by task, time range, and errors.",
+        "parameters": [
+          {
+            "name": "task",
+            "in": "query",
+            "description": "Filter results by a specific task name.",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "startTime",
+            "in": "query",
+            "description": "Start time (ISO format or timestamp) to filter analytics.",
+            "required": false,
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "name": "endTime",
+            "in": "query",
+            "description": "End time (ISO format or timestamp) to filter analytics.",
+            "required": false,
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "name": "errorsOnly",
+            "in": "query",
+            "description": "Set to true to filter only error-related requests.",
+            "required": false,
+            "type": "boolean"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response with analytics data.",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "totalRequests": { "type": "integer", "example": 120 },
+                "totalErrors": { "type": "integer", "example": 5 },
+                "avgExecutionTime": { "type": "number", "format": "float", "example": 250.45 },
+                "minExecutionTime": { "type": "integer", "example": 150 },
+                "maxExecutionTime": { "type": "integer", "example": 500 },
+                "stdDeviation": { "type": "number", "format": "float", "example": 50.23 },
+                "taskStats": {
+                  "type": "object",
+                  "example": { "task1": 50, "task2": 70 }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameters",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": { "type": "string", "example": "Invalid request" },
+                "details": { "type": "string", "example": "Start time is not valid" }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": { "type": "string", "example": "Internal server error" },
+                "details": { "type": "string", "example": "Unexpected error occurred" }
+              }
+            }
+          }
+        }
+      }
+    },
   "/api/social/generate-caption": {
     "post": {
       "tags": ["Llama"],
@@ -1909,6 +2064,52 @@
         }
       }
     },
+     
+"AnalyticsResponse": {
+  "type": "object",
+  "properties": {
+    "totalRequests": {"type": "integer"},
+    "totalErrors": {"type": "integer"},
+    "avgExecutionTime": {"type": "number"},
+    "minExecutionTime": {"type": "number"},
+    "maxExecutionTime": {"type": "number"},
+    "stdDeviation": {"type": "number"},
+    "taskStats": {"type": "object"}
+  }
+},
+"ErrorResponse": {
+  "type": "object",
+  "properties": {
+    "totalErrors": {"type": "integer"},
+    "errorRate": {"type": "string"},
+    "lastErrors": {"type": "array", "items": {"type": "string"}}
+  }
+},
+"ModelResponse": {
+  "type": "object",
+  "properties": {
+    "totalRequests": {"type": "integer"},
+    "successfulResponses": {"type": "integer"},
+    "failedResponses": {"type": "integer"},
+    "avgExecutionTime": {"type": "number"}
+  }
+},
+"TaskResponse": {
+  "type": "object",
+  "properties": {
+    "task": {"type": "string"},
+    "requestCount": {"type": "integer"},
+    "avgExecutionTime": {"type": "number"},
+    "minExecutionTime": {"type": "number"},
+    "maxExecutionTime": {"type": "number"}
+  }
+},
+"TimeResponse": {
+  "type": "object",
+  "properties": {
+    "totalRequests": {"type": "integer"},
+    "avgExecutionTime": {"type": "number"}
+  },
     "Login": {
       "type": "object",
       "properties": {
@@ -1961,4 +2162,5 @@
       }
     } 
   }
+}
 }

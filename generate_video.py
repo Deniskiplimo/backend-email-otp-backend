@@ -3,10 +3,11 @@ import sys
 import webbrowser
 import cv2
 import ffmpeg
-
 import codecs
+import argparse
 
-sys.stdout = codecs.getwriter("utf-8")(sys.stdout.detach())  # Force UTF-8 encoding
+# Ensure UTF-8 encoding for output
+sys.stdout = codecs.getwriter("utf-8")(sys.stdout.detach())
 
 def ensure_file_exists(file_path):
     """Ensure the given file exists, otherwise warn the user."""
@@ -15,7 +16,7 @@ def ensure_file_exists(file_path):
         sys.exit(1)
 
 def process_video(input_video, text, output, format):
-    """Overlay text on an existing video."""
+    """Overlay text on an existing video and optionally add background music."""
     try:
         ensure_file_exists(input_video)  # Check if input video exists
 
@@ -31,9 +32,17 @@ def process_video(input_video, text, output, format):
             print(f"❌ Error: Cannot open input video {input_video}.", file=sys.stderr)
             sys.exit(1)
 
+        # Get video properties
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = int(cap.get(cv2.CAP_PROP_FPS))
+        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+        if width == 0 or height == 0 or fps == 0:
+            print("❌ Error: Invalid video file. Check file integrity.", file=sys.stderr)
+            sys.exit(1)
+
+        print(f"📹 Video Details: {width}x{height} @ {fps} FPS, {frame_count} frames")
 
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         video_writer = cv2.VideoWriter(output_file, fourcc, fps, (width, height))
@@ -45,25 +54,41 @@ def process_video(input_video, text, output, format):
         text_x = (width - text_size[0]) // 2
         text_y = height - 50  # Position near the bottom
 
+        processed_frames = 0
         while True:
             ret, frame = cap.read()
             if not ret:
                 break  # End of video
 
+            if frame is None:
+                print(f"⚠️ Skipping empty frame {processed_frames + 1}")
+                continue
+
             cv2.putText(frame, text, (text_x, text_y), font, font_scale, (255, 255, 255), font_thickness, cv2.LINE_AA)
             video_writer.write(frame)
+            processed_frames += 1
 
         cap.release()
         video_writer.release()
+
+        if processed_frames == 0:
+            print("❌ Error: No frames were processed. Video might be corrupted.", file=sys.stderr)
+            sys.exit(1)
+
+        print(f"✅ Video processing complete: {output_file}")
 
         # Add background music if available
         music_file = "background.mp3"
         if os.path.exists(music_file):
             temp_output = f"{output}_temp.{format}"
-            ffmpeg.input(output_file).output(temp_output, vcodec="copy", acodec="aac", shortest=None).run(overwrite_output=True)
-            os.replace(temp_output, output_file)
-
-        print(f"✅ Video processing complete: {output_file}")
+            try:
+                ffmpeg.input(output_file).input(music_file).output(
+                    temp_output, vcodec="libx264", acodec="aac", shortest=None
+                ).run(overwrite_output=True)
+                os.replace(temp_output, output_file)
+                print("🎵 Background music added successfully!")
+            except Exception as e:
+                print(f"⚠️ Warning: Could not add background music: {e}")
 
         # Open the generated video in the default web browser
         webbrowser.open(f"file://{os.path.abspath(output_file)}")
@@ -72,8 +97,6 @@ def process_video(input_video, text, output, format):
     except Exception as e:
         print(f"❌ Error processing video: {e}", file=sys.stderr)
         sys.exit(1)
-
-import argparse
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Overlay text on a video.")
@@ -85,4 +108,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     video_path = process_video(args.input, args.text, args.output, args.format)
-    print(video_path)
+    print(f"📂 Output saved at: {video_path}")

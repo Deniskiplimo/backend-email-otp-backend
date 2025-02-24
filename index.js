@@ -6,6 +6,11 @@ const path = require('path');
 const { llamacpp, streamText } = require("modelfusion");
 const ip = '8.8.8.8';
 const open = require("open");
+const crypto = require("crypto");
+const NodeCache = require("node-cache");
+const { graphqlHTTP } = require("express-graphql"); 
+const { buildSchema } = require("graphql");
+const cache = new NodeCache({ stdTTL: 300 }); // Cache responses for 5 minutes
 const os = require('os');
 const { body, validationResult ,query} = require("express-validator");
 const PORT = 4000;
@@ -31,10 +36,10 @@ const geoip = require('geoip-lite');
 const nodemailer = require('nodemailer');
 const geo = geoip.lookup(ip);  // Example usage of geoip to track location of the request
 console.log(geo);
-const jwt = require('jsonwebtoken');
+const jwt = require('jsonwebtoken'); 
 const bcrypt = require('bcrypt');
 const sendEmail = require('./utils/sendEmail');
-const { spawn,exec } = require('child_process');
+const { spawn,exec,execSync } = require('child_process');
 const axios = require('axios');
 const fs = require('fs'); 
 const app = express();
@@ -758,8 +763,16 @@ async function waitForServer(url, retries = 5, delayMs = 2000) {
     }
   }
 }
+const nThreadsDefault = Math.min(8, os.cpus().length);
 
-const nThreadsDefault = Math.min(8, os.cpus().length); // Cap at 8 for efficiency
+const analytics = {
+  requestCount: 0,
+  errorCount: 0,
+  executionTimes: [],
+  taskStats: {},
+  minExecutionTime: null,
+  maxExecutionTime: null,
+};
 
 async function executeLlama(options = {}) {
   try {
@@ -772,88 +785,140 @@ async function executeLlama(options = {}) {
       model = "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
       task = "default",
       socket = null,
-      maxTokens = 128, // Faster response
-      temperature = 0.6, // More deterministic
-      topK = 100, // More accurate choices
-      topP = 0.9, // Probability mass tuning
-      nThreads = nThreadsDefault, // Optimized for performance
-      stream = false, // 🔹 New: Support for streaming responses
+      maxTokens = 128,
+      temperature = 0.6,
+      topK = 100,
+      topP = 0.9,
+      nThreads = nThreadsDefault,
+      stream = false,
     } = options;
 
-    // Validate prompt
     if (!prompt || typeof prompt !== "string" || prompt.trim() === "") {
-      console.error("❌ Invalid prompt received:", prompt);
-      return Promise.reject({
-        message: "❌ Invalid prompt",
-        details: "Prompt must be a non-empty string.",
-      });
+      return Promise.reject({ message: "Invalid prompt", details: "Prompt must be a non-empty string." });
     }
 
-    // Validate numeric parameters
-    if (![maxTokens, temperature, topK, topP].every((val) => typeof val === "number" && val > 0)) {
-      return Promise.reject({
-        message: "❌ Invalid parameters",
-        details: "maxTokens, temperature, topK, and topP must be positive numbers.",
-      });
+    // Check cache first
+    const cacheKey = crypto.createHash("sha256").update(JSON.stringify(options)).digest("hex");
+    if (cache.has(cacheKey)) {
+      console.log("⚡ Returning cached response");
+      return cache.get(cacheKey);
     }
-
-    console.log(`📝 Running Llama with prompt: "${prompt}" using ${nThreads} threads`);
 
     const startTime = Date.now();
+    const response = await runLlamaModel({ prompt, model, socket, maxTokens, temperature, topK, topP, nThreads, stream });
+    const executionTime = Date.now() - startTime;
 
-    const response = await runLlamaModel({
-      prompt,
-      model,
-      socket,
-      maxTokens,
-      temperature,
-      topK,
-      topP,
-      nThreads,
-      stream, // 🔹 New: Supports streaming
-    });
+    // Update analytics
+    analytics.requestCount++;
+    analytics.executionTimes.push(executionTime);
+    analytics.taskStats[task] = (analytics.taskStats[task] || 0) + 1;
+    analytics.minExecutionTime = analytics.minExecutionTime !== null ? Math.min(analytics.minExecutionTime, executionTime) : executionTime;
+    analytics.maxExecutionTime = analytics.maxExecutionTime !== null ? Math.max(analytics.maxExecutionTime, executionTime) : executionTime;
 
-    console.log(`✅ Llama completed in ${Date.now() - startTime}ms`);
+    // Cache response
+    cache.set(cacheKey, response);
 
+    console.log(`✅ Completed in ${executionTime}ms | Task: ${task} | Total Requests: ${analytics.requestCount}`);
     return response;
   } catch (error) {
-    console.error("❌ Error executing Llama:", error.message || error);
+    analytics.errorCount++;
+    console.error("❌ Execution error:", error.message || error);
     return Promise.reject({ message: "Execution failed", details: error.message });
   }
 }
-// Utility function for error handling
+
+// Centralized Error Handling
 const handleError = (res, message, error) => {
   console.error(`❌ ${message}:`, error);
   res.status(500).json({ error: message, details: error.message || error });
 };
 
-// AI Task Handler
-const handleAITask = async (req, res, prompt, task, options = {}) => {
+// Generic AI Request Handler with Analytics Tracking
+const handleAIRequest = async (req, res, task, promptTemplate) => {
   try {
+    const startTime = Date.now();
+    const prompt = promptTemplate(req.body);
+
     if (!prompt || typeof prompt !== "string" || prompt.trim() === "") {
       return res.status(400).json({ error: "Invalid prompt", details: "Prompt must be a non-empty string." });
     }
 
-    console.log(`🔄 Processing AI task: ${task} with prompt: "${prompt}"`);
+    console.log(`🔄 Processing AI task: ${task} | Prompt: "${prompt}"`);
 
-    const startTime = Date.now();
-    const response = await executeLlama({ prompt, task, ...options });
+    const response = await executeLlama({ prompt, task });
 
-    // Handle missing or empty response
-    if (!response || !response.response || typeof response.response !== "string" || response.response.trim() === "") {
-      console.error("❌ AI model returned an empty or invalid response.");
-      return res.status(500).json({ error: "AI model returned an invalid response" });
+    if (!response || !response.response || response.response.trim() === "") {
+      analytics.errorCount++;
+      return res.status(500).json({ error: "AI response is empty", details: response });
     }
 
-    console.log(`✅ AI task '${task}' completed in ${Date.now() - startTime}ms`);
-    
-    return res.json({ status: "success", response: response.response.trim() });
+    const executionTime = Date.now() - startTime;
 
+    // Update analytics data
+    analytics.requestCount++;
+    analytics.executionTimes.push(executionTime);
+    analytics.taskStats[task] = (analytics.taskStats[task] || 0) + 1;
+    analytics.minExecutionTime = Math.min(analytics.minExecutionTime ?? executionTime, executionTime);
+    analytics.maxExecutionTime = Math.max(analytics.maxExecutionTime ?? executionTime, executionTime);
+
+    res.json({ status: "success", response: response.response.trim(), executionTime });
   } catch (error) {
-    console.error(`❌ AI task '${task}' failed:`, error);
+    analytics.errorCount++;
     handleError(res, `${task} failed`, error);
   }
 };
+
+// Get AI Analytics with Filtering
+const getAnalytics = async (req, res) => {
+  try {
+    const { task, startTime, endTime } = req.query;
+    let filteredRequests = analytics.executionTimes.map((time, index) => ({
+      task: Object.keys(analytics.taskStats)[index] || "unknown",
+      executionTime: time,
+      timestamp: Date.now() - time, // Approximation
+    }));
+
+    if (task) {
+      filteredRequests = filteredRequests.filter((entry) => entry.task === task);
+    }
+
+    if (startTime || endTime) {
+      const start = startTime ? new Date(startTime).getTime() : 0;
+      const end = endTime ? new Date(endTime).getTime() : Date.now();
+      filteredRequests = filteredRequests.filter((entry) => entry.timestamp >= start && entry.timestamp <= end);
+    }
+
+    const executionTimes = filteredRequests.map((entry) => entry.executionTime);
+    const totalRequests = executionTimes.length;
+    const totalErrors = analytics.errorCount;
+    const avgExecutionTime = totalRequests
+      ? executionTimes.reduce((a, b) => a + b, 0) / totalRequests
+      : 0;
+
+    const minExecutionTime = executionTimes.length ? Math.min(...executionTimes) : null;
+    const maxExecutionTime = executionTimes.length ? Math.max(...executionTimes) : null;
+    const variance =
+      executionTimes.length > 1
+        ? executionTimes.reduce((sum, val) => sum + Math.pow(val - avgExecutionTime, 2), 0) / executionTimes.length
+        : 0;
+
+    const stdDeviation = Math.sqrt(variance);
+
+    res.json({
+      totalRequests,
+      totalErrors,
+      avgExecutionTime: avgExecutionTime.toFixed(2),
+      minExecutionTime,
+      maxExecutionTime,
+      stdDeviation: stdDeviation.toFixed(2),
+      taskStats: analytics.taskStats,
+    });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch analytics", details: error.message });
+  }
+};
+
+module.exports = { handleAIRequest, getAnalytics };
 
 async function runLlamaModel({ prompt, model, socket, maxTokens, temperature, topK, nThreads, port = PORT }) { 
   return new Promise(async (resolve, reject) => {
@@ -1199,24 +1264,119 @@ app.post("/api/ai/sentiment", async (req, res) => {
   if (!text) return res.status(400).json({ error: "Text is required" });
   await handleAITask(req, res, `Classify the sentiment of this text: "${text}"`, "sentiment-analysis", { maxTokens: 50 });
 });
-// ✅ AI Data Analysis
+// API to Get Analytics
+app.get("/api/analytics", (req, res) => {
+  handleAIRequest(req, res, "analytics", (query) => `Get analytics data for task: ${query.task || "all"}, time range: ${query.startTime || "N/A"} - ${query.endTime || "N/A"}`);
+});
 
+// API to Get Errors Analytics
+app.get("/api/analytics/errors", (req, res) => {
+  handleAIRequest(req, res, "analytics-errors", () => "Get error analytics.");
+});
 
+// API to Get Model Analytics
+app.get("/api/analytics/model", (req, res) => {
+  handleAIRequest(req, res, "analytics-model", () => "Get model analytics.");
+});
+
+// API to Get Task-Specific Analytics
+app.get("/api/analytics/task/:task", (req, res) => {
+  handleAIRequest(req, res, "analytics-task", (query) => `Get analytics for task: ${req.params.task}`);
+});
+
+// API to Get Analytics by Time Range
+app.get("/api/analytics/time", (req, res) => {
+  handleAIRequest(req, res, "analytics-time", (query) => {
+    console.log("Received Query:", query); // Debugging
+    const startTime = query.startTime || "N/A";
+    const endTime = query.endTime || "N/A";
+    return `Get analytics for time range: ${startTime} - ${endTime}`;
+  }).catch((error) => {
+    console.error("Error handling AI request:", error);
+    res.status(500).json({ error: "Internal Server Error", details: error.message });
+  });
+});
  
 
-// Generic AI Request Handler
-const handleAIRequest = async (req, res, task, promptTemplate) => {
-  try {
-    const prompt = promptTemplate(req.body);
-    const response = await executeLlama({ prompt, task });
-    if (!response || !response.response || response.response.trim() === "") {
-      return res.status(500).json({ error: "AI response is empty", details: response });
-    }
-    res.json({ status: "success", response: response.response.trim() });
-  } catch (error) {
-    handleError(res, error, `${task} failed`);
+// API to Stream Analytics Data
+app.get("/api/analytics/stream", (req, res) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+
+  setInterval(() => {
+    handleAIRequest(req, res, "analytics-stream", () => "Stream live analytics data.");
+  }, 5000); // Sends update every 5s
+});
+
+// GraphQL API for Analytics
+const schema = buildSchema(`
+  type Query {
+    totalRequests: Int
+    totalErrors: Int
+    avgExecutionTime: Float
   }
+`);
+
+const root = {
+  totalRequests: () => handleAIRequest({}, {}, "analytics-graphql", () => "Get total requests."),
+  totalErrors: () => handleAIRequest({}, {}, "analytics-graphql", () => "Get total errors."),
+  avgExecutionTime: () => handleAIRequest({}, {}, "analytics-graphql", () => "Get average execution time."),
 };
+
+app.use("/api/analytics/graphql", graphqlHTTP({
+  schema,
+  rootValue: root,
+  graphiql: true,
+}));
+
+// API to Get Dashboard Data
+app.get("/api/analytics/dashboard", (req, res) => {
+  handleAIRequest(req, res, "analytics-dashboard", () => "Get dashboard analytics data.");
+});
+
+// API to Get AI Analytics
+app.get("/api/ai/analytics", (req, res) => {
+  handleAIRequest(req, res, "analytics-ai", (query) => {
+    const { task, startTime, endTime } = query;
+
+    let filteredRequests = analytics.executionTimes.map((time, index) => ({
+      task: Object.keys(analytics.taskStats)[index] || "unknown",
+      executionTime: time,
+      timestamp: Date.now() - time,
+    }));
+
+    if (task) {
+      filteredRequests = filteredRequests.filter((entry) => entry.task === task);
+    }
+
+    if (startTime || endTime) {
+      const start = startTime ? new Date(startTime).getTime() : 0;
+      const end = endTime ? new Date(endTime).getTime() : Date.now();
+      filteredRequests = filteredRequests.filter((entry) => entry.timestamp >= start && entry.timestamp <= end);
+    }
+
+    const executionTimes = filteredRequests.map((entry) => entry.executionTime);
+    const totalRequests = executionTimes.length;
+    const totalErrors = analytics.errorCount;
+    const avgExecutionTime = totalRequests ? executionTimes.reduce((a, b) => a + b, 0) / totalRequests : 0;
+    const minExecutionTime = executionTimes.length ? Math.min(...executionTimes) : null;
+    const maxExecutionTime = executionTimes.length ? Math.max(...executionTimes) : null;
+    const variance = executionTimes.length > 1 ? executionTimes.reduce((sum, val) => sum + Math.pow(val - avgExecutionTime, 2), 0) / executionTimes.length : 0;
+    const stdDeviation = Math.sqrt(variance);
+
+    return {
+      totalRequests,
+      totalErrors,
+      avgExecutionTime: avgExecutionTime.toFixed(2),
+      minExecutionTime,
+      maxExecutionTime,
+      stdDeviation: stdDeviation.toFixed(2),
+      taskStats: analytics.taskStats,
+    };
+  });
+});
+ 
 
 // AI Routes
 app.post("/api/ai/analyze-data", logRequest, validateRequest(["dataset", "question"]), (req, res) => {
@@ -1226,6 +1386,42 @@ app.post("/api/ai/analyze-data", logRequest, validateRequest(["dataset", "questi
 app.post("/api/ai/grammar-check", logRequest, validateRequest(["text"]), (req, res) => {
   handleAIRequest(req, res, "grammar-correction", (body) => `Correct the grammar in: ${body.text}`);
 });
+
+
+const audioDir = path.join(__dirname, "generated_audio");
+if (!fs.existsSync(audioDir)) {
+  fs.mkdirSync(audioDir, { recursive: true });
+}
+
+app.post(
+  "/api/ai/video-to-text",
+  logRequest,
+  validateRequest(["videoUrl"]),
+  (req, res) => {
+    handleAIRequest(req, res, "video-to-text", (body) => {
+      const videoUrl = body.videoUrl;
+      const videoPath = path.join(videosDir, path.basename(videoUrl));
+      const audioPath = path.join(audioDir, path.basename(videoPath, path.extname(videoPath)) + ".wav");
+
+      if (!fs.existsSync(videoPath)) {
+        throw new Error(`❌ Video file not found: ${videoPath}`);
+      }
+
+      console.log(`🎥 Extracting audio from: ${videoPath}`);
+      try {
+        execSync(`ffmpeg -i "${videoPath}" -ar 16000 -ac 1 -c:a pcm_s16le "${audioPath}"`, { stdio: "inherit" });
+      } catch (error) {
+        throw new Error(`⚠️ Failed to extract audio: ${error.message}`);
+      }
+
+      console.log(`🔊 Audio extracted: ${audioPath}`);
+
+      // Return transcription prompt for LLaMA
+      return `Transcribe the following audio into text: ${audioPath}`;
+    });
+  }
+);
+
 
 app.post("/api/ai/chatbot", logRequest, validateRequest(["message"]), (req, res) => {
   try {
@@ -1334,7 +1530,7 @@ function processVideo(text, videoPath, res) {
     const videoUrl = `${res.req.protocol}://${res.req.get("host")}/videos/${path.basename(videoPath)}`;
     res.json({ status: "success", videoUrl });
   });
-} 
+}  
 
 // Serve videos statically
 app.use("/videos", express.static(videosDir));
