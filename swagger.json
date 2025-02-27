@@ -944,7 +944,113 @@
 }
 
 , 
-
+"/api/ai/debt-collection": {
+      "post": {
+        "tags": ["Llama"],
+        "summary": "Initiate a debt collection notification",
+        "description": "Sends a debt collection reminder via different methods (SMS, voice note, AI call, WhatsApp).",
+        "parameters": [
+          {
+            "name": "debtorId",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" },
+            "example": "D12345"
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" },
+            "example": "John Doe"
+          },
+          {
+            "name": "phone",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" },
+            "example": "+1234567890"
+          },
+          {
+            "name": "amountDue",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "number" },
+            "example": 500
+          },
+          {
+            "name": "notifyMethod",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": ["sms", "voice", "call", "whatsapp"]
+            },
+            "example": "sms"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Notification sent successfully",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "smsExample": {
+                    "summary": "SMS Notification",
+                    "value": {
+                      "status": "success",
+                      "sms": "Reminder sent via SMS"
+                    }
+                  },
+                  "voiceExample": {
+                    "summary": "Voice Note",
+                    "value": {
+                      "status": "success",
+                      "voiceNote": "Generated voice note URL"
+                    }
+                  },
+                  "callExample": {
+                    "summary": "AI Call",
+                    "value": {
+                      "status": "success",
+                      "call": "AI call initiated"
+                    }
+                  },
+                  "whatsappExample": {
+                    "summary": "WhatsApp Message",
+                    "value": {
+                      "status": "success",
+                      "whatsapp": "Message sent via WhatsApp"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - Missing or invalid fields",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "Missing required fields"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error - Debt collection failed",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "Debt collection failed",
+                  "details": "Internal processing error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
 "/api/analytics": {
   "get": {
     "summary": "Get overall analytics",

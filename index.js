@@ -8,8 +8,7 @@ const ip = '8.8.8.8';
 const http = require("http");
 const { Server } = require("socket.io");
 const ChartJSImage = require("chart.js-image"); // Generate graphs in backend
-const { Worker } = require("worker_threads");
-const WebSocket = require("ws");
+
 const open = require("open");
 const crypto = require("crypto");
 const NodeCache = require("node-cache");
@@ -18,7 +17,7 @@ const { buildSchema } = require("graphql");
 const cache = new NodeCache({ stdTTL: 300 }); // Cache responses for 5 minutes
 const os = require('os');
 const { body, validationResult ,query} = require("express-validator");
-const PORT = 8000;
+const PORT = 4000;
 const { parentPort, workerData, isMainThread } = require("worker_threads");
 const cors = require("cors");
       
@@ -772,63 +771,18 @@ async function waitForServer(url, retries = 5, delayMs = 2000) {
   }
 }
 
-const wss = new WebSocket.Server({ port: PORT });
-
-console.log(`🚀 WebSocket AI Server running on ws://localhost:${PORT}`);
-
 const nThreadsDefault = Math.min(8, os.cpus().length);
 
-
 const analytics = {
-  connections: 0,
   requestCount: 0,
   errorCount: 0,
   executionTimes: [],
-  taskStats: {},
+  taskStats: {}, 
   minExecutionTime: null,
   maxExecutionTime: null,
-  avgExecutionTime: null,
-  rollingAvgExecutionTime: [],
   sentimentCounts: { positive: 0, negative: 0, neutral: 0 },
 };
 
-// WebSocket Connection Handling
-wss.on("connection", (ws) => {
-  analytics.connections++;
-  console.log(`🔗 New Client Connected | Active Clients: ${analytics.connections}`);
-
-  ws.on("message", async (message) => {
-    analytics.requestCount++;
-    try {
-      const options = JSON.parse(message);
-      if (!options.prompt || typeof options.prompt !== "string") {
-        return ws.send(JSON.stringify({ error: "Invalid prompt" }));
-      }
-
-      console.log("📩 Processing:", options.prompt);
-
-      const startTime = Date.now();
-      const response = await executeLlama(options);
-      const executionTime = Date.now() - startTime;
-
-      analytics.executionTimes.push(executionTime);
-      ws.send(JSON.stringify({ response, executionTime }));
-
-      console.log(`✅ Response Sent in ${executionTime}ms`);
-    } catch (error) {
-      analytics.errorCount++;
-      console.error("❌ Error:", error.message);
-      ws.send(JSON.stringify({ error: "Processing failed", details: error.message }));
-    }
-  });
-
-  ws.on("close", () => {
-    analytics.connections--;
-    console.log(`❌ Client Disconnected | Active Clients: ${analytics.connections}`);
-  });
-});
-
-// Function to Execute AI Model via Worker Thread
 async function executeLlama(options = {}) {
   try {
     if (!options || typeof options !== "object") {
@@ -844,73 +798,44 @@ async function executeLlama(options = {}) {
       temperature = 0.6,
       topK = 100,
       topP = 0.9,
-      nThreads = Math.min(nThreadsDefault, os.loadavg()[0] > 2 ? 4 : nThreadsDefault),
+      nThreads = nThreadsDefault,
       stream = false,
     } = options;
 
-    if (!prompt.trim()) {
+    if (!prompt || typeof prompt !== "string" || prompt.trim() === "") {
       return Promise.reject({ message: "Invalid prompt", details: "Prompt must be a non-empty string." });
     }
 
-    // Check Cache First (5-minute expiration)
+    // Check cache first
     const cacheKey = crypto.createHash("sha256").update(JSON.stringify(options)).digest("hex");
-    const cachedData = cache.get(cacheKey);
-    if (cachedData && Date.now() - cachedData.timestamp < 5 * 60 * 1000) {
-      console.log("⚡ Returning Cached Response");
-      return cachedData.response;
+    if (cache.has(cacheKey)) {
+      console.log("⚡ Returning cached response");
+      return cache.get(cacheKey);
     }
 
-    // AI Execution using Worker Threads
     const startTime = Date.now();
-    const response = await runLlamaWithWorker({ prompt, model, socket, maxTokens, temperature, topK, topP, nThreads, stream });
+    const response = await runLlamaModel({ prompt, model, socket, maxTokens, temperature, topK, topP, nThreads, stream });
     const executionTime = Date.now() - startTime;
 
-    // Update Analytics
+    // Update analytics
+    analytics.requestCount++;
     analytics.executionTimes.push(executionTime);
     analytics.taskStats[task] = (analytics.taskStats[task] || 0) + 1;
     analytics.minExecutionTime = analytics.minExecutionTime !== null ? Math.min(analytics.minExecutionTime, executionTime) : executionTime;
     analytics.maxExecutionTime = analytics.maxExecutionTime !== null ? Math.max(analytics.maxExecutionTime, executionTime) : executionTime;
-    if (analytics.executionTimes.length > 10) analytics.executionTimes.shift();
-    analytics.avgExecutionTime = analytics.executionTimes.reduce((a, b) => a + b, 0) / analytics.executionTimes.length;
 
-    // Cache Response
-    cache.set(cacheKey, { response, timestamp: Date.now() });
+    // Cache response
+    cache.set(cacheKey, response);
 
     console.log(`✅ Completed in ${executionTime}ms | Task: ${task} | Total Requests: ${analytics.requestCount}`);
     return response;
   } catch (error) {
     analytics.errorCount++;
-    console.error("❌ Execution Error:", error.message || error);
+    console.error("❌ Execution error:", error.message || error);
     return Promise.reject({ message: "Execution failed", details: error.message });
   }
 }
 
-// Worker Thread for AI Execution
-function runLlamaWithWorker(options) {
-  return new Promise((resolve, reject) => {
-    const worker = new Worker(__filename, { workerData: options });
-
-    worker.on("message", resolve);
-    worker.on("error", reject);
-    worker.on("exit", (code) => {
-      if (code !== 0) reject(new Error(`Worker stopped with exit code ${code}`));
-    });
-  });
-}
-
-// Worker Execution Logic
-if (!module.parent && require("worker_threads").isMainThread === false) {
-  const { parentPort, workerData } = require("worker_threads");
-
-  async function runLlamaModel({ prompt }) {
-    await new Promise((resolve) => setTimeout(resolve, Math.random() * 500 + 200)); // Simulating AI Response Delay
-    return { response: `Generated response for: ${prompt}` };
-  }
-
-  runLlamaModel(workerData)
-    .then((result) => parentPort.postMessage(result))
-    .catch((error) => parentPort.postMessage({ error: error.message }));
-}
 // Centralized Error Handling
 const handleError = (res, message, error) => {
   console.error(`❌ ${message}:`, error);
@@ -2035,6 +1960,86 @@ app.post("/api/social/analyze-trends", logRequest, (req, res) => {
   });
 });
 
+// 📩 AI-Generated SMS
+const sendDebtReminderSMS = async (debtor) => {
+  const task = "Debt Collection SMS";
+  const prompt = `Generate a polite yet firm debt reminder for ${debtor.name} who owes $${debtor.amountDue}.`;
+
+  const response = await executeLlama({ prompt, task });
+  const message = response.response.trim();
+
+  console.log(`📩 Sending SMS to ${debtor.phone}: "${message}"`);
+
+  return { status: "sent", message };
+};
+
+// 🔊 Convert AI-Generated Message to Speech (Voice Note)
+const convertToVoiceNote = async (text, debtorId) => {
+  const client = new textToSpeech.TextToSpeechClient();
+  const request = {
+    input: { text },
+    voice: { languageCode: "en-US", ssmlGender: "NEUTRAL" },
+    audioConfig: { audioEncoding: "MP3" },
+  };
+
+  const [response] = await client.synthesizeSpeech(request);
+  const filePath = `voice_notes/debtor_${debtorId}.mp3`;
+  await util.promisify(fs.writeFile)(filePath, response.audioContent, "binary");
+
+  return filePath;
+};
+
+// 📞 Simulated AI Call System
+const makeAICall = async (debtor) => {
+  console.log(`📞 AI calling debtor: ${debtor.name} at ${debtor.phone}`);
+  return `Call placed to ${debtor.phone}`;
+};
+
+// 💬 AI-Generated WhatsApp Message
+const sendWhatsAppMessage = async (debtor) => {
+  const task = "Debt Collection WhatsApp";
+  const prompt = `Generate a polite yet firm debt reminder for ${debtor.name} who owes $${debtor.amountDue} in WhatsApp-friendly format.`;
+
+  const response = await executeLlama({ prompt, task });
+  const message = response.response.trim();
+
+  console.log(`💬 Sending WhatsApp message to ${debtor.phone}: "${message}"`);
+
+  return { status: "sent", message };
+};
+
+// 📩 📞 🔊 Debt Collection Request
+app.post("/api/ai/debt-collection", async (req, res) => {
+  const { debtorId, name, phone, amountDue, notifyMethod } = req.query; // Use req.query
+
+  if (!debtorId || !name || !phone || !amountDue || !notifyMethod) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
+
+  const debtor = { debtorId, name, phone, amountDue };
+  let response = { status: "success" };
+
+  try {
+    if (notifyMethod === "sms") {
+      response.sms = await sendDebtReminderSMS(debtor);
+    } else if (notifyMethod === "voice") {
+      response.voiceNote = await convertToVoiceNote(
+        `Dear ${name}, you have an outstanding balance of $${amountDue}. Kindly clear it.`,
+        debtorId
+      );
+    } else if (notifyMethod === "call") {
+      response.call = await makeAICall(debtor);
+    } else if (notifyMethod === "whatsapp") {
+      response.whatsapp = await sendWhatsAppMessage(debtor);
+    } else {
+      return res.status(400).json({ error: "Invalid notification method" });
+    }
+
+    res.json(response);
+  } catch (error) {
+    res.status(500).json({ error: "Debt collection failed", details: error.message });
+  } 
+});
 // AI-Powered Credit Score Estimation
 app.post("/api/banking/credit-score", logRequest, (req, res) => {
   handleAIRequest(req, res, "credit-score-estimation", (body) => {
