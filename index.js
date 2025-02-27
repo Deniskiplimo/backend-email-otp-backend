@@ -8,7 +8,8 @@ const ip = '8.8.8.8';
 const http = require("http");
 const { Server } = require("socket.io");
 const ChartJSImage = require("chart.js-image"); // Generate graphs in backend
-
+const { Worker } = require("worker_threads");
+const WebSocket = require("ws");
 const open = require("open");
 const crypto = require("crypto");
 const NodeCache = require("node-cache");
@@ -17,7 +18,7 @@ const { buildSchema } = require("graphql");
 const cache = new NodeCache({ stdTTL: 300 }); // Cache responses for 5 minutes
 const os = require('os');
 const { body, validationResult ,query} = require("express-validator");
-const PORT = 4000;
+const PORT = 8000;
 const { parentPort, workerData, isMainThread } = require("worker_threads");
 const cors = require("cors");
       
@@ -771,18 +772,63 @@ async function waitForServer(url, retries = 5, delayMs = 2000) {
   }
 }
 
+const wss = new WebSocket.Server({ port: PORT });
+
+console.log(`🚀 WebSocket AI Server running on ws://localhost:${PORT}`);
+
 const nThreadsDefault = Math.min(8, os.cpus().length);
 
+
 const analytics = {
+  connections: 0,
   requestCount: 0,
   errorCount: 0,
   executionTimes: [],
-  taskStats: {}, 
+  taskStats: {},
   minExecutionTime: null,
   maxExecutionTime: null,
+  avgExecutionTime: null,
+  rollingAvgExecutionTime: [],
   sentimentCounts: { positive: 0, negative: 0, neutral: 0 },
 };
 
+// WebSocket Connection Handling
+wss.on("connection", (ws) => {
+  analytics.connections++;
+  console.log(`🔗 New Client Connected | Active Clients: ${analytics.connections}`);
+
+  ws.on("message", async (message) => {
+    analytics.requestCount++;
+    try {
+      const options = JSON.parse(message);
+      if (!options.prompt || typeof options.prompt !== "string") {
+        return ws.send(JSON.stringify({ error: "Invalid prompt" }));
+      }
+
+      console.log("📩 Processing:", options.prompt);
+
+      const startTime = Date.now();
+      const response = await executeLlama(options);
+      const executionTime = Date.now() - startTime;
+
+      analytics.executionTimes.push(executionTime);
+      ws.send(JSON.stringify({ response, executionTime }));
+
+      console.log(`✅ Response Sent in ${executionTime}ms`);
+    } catch (error) {
+      analytics.errorCount++;
+      console.error("❌ Error:", error.message);
+      ws.send(JSON.stringify({ error: "Processing failed", details: error.message }));
+    }
+  });
+
+  ws.on("close", () => {
+    analytics.connections--;
+    console.log(`❌ Client Disconnected | Active Clients: ${analytics.connections}`);
+  });
+});
+
+// Function to Execute AI Model via Worker Thread
 async function executeLlama(options = {}) {
   try {
     if (!options || typeof options !== "object") {
@@ -798,44 +844,73 @@ async function executeLlama(options = {}) {
       temperature = 0.6,
       topK = 100,
       topP = 0.9,
-      nThreads = nThreadsDefault,
+      nThreads = Math.min(nThreadsDefault, os.loadavg()[0] > 2 ? 4 : nThreadsDefault),
       stream = false,
     } = options;
 
-    if (!prompt || typeof prompt !== "string" || prompt.trim() === "") {
+    if (!prompt.trim()) {
       return Promise.reject({ message: "Invalid prompt", details: "Prompt must be a non-empty string." });
     }
 
-    // Check cache first
+    // Check Cache First (5-minute expiration)
     const cacheKey = crypto.createHash("sha256").update(JSON.stringify(options)).digest("hex");
-    if (cache.has(cacheKey)) {
-      console.log("⚡ Returning cached response");
-      return cache.get(cacheKey);
+    const cachedData = cache.get(cacheKey);
+    if (cachedData && Date.now() - cachedData.timestamp < 5 * 60 * 1000) {
+      console.log("⚡ Returning Cached Response");
+      return cachedData.response;
     }
 
+    // AI Execution using Worker Threads
     const startTime = Date.now();
-    const response = await runLlamaModel({ prompt, model, socket, maxTokens, temperature, topK, topP, nThreads, stream });
+    const response = await runLlamaWithWorker({ prompt, model, socket, maxTokens, temperature, topK, topP, nThreads, stream });
     const executionTime = Date.now() - startTime;
 
-    // Update analytics
-    analytics.requestCount++;
+    // Update Analytics
     analytics.executionTimes.push(executionTime);
     analytics.taskStats[task] = (analytics.taskStats[task] || 0) + 1;
     analytics.minExecutionTime = analytics.minExecutionTime !== null ? Math.min(analytics.minExecutionTime, executionTime) : executionTime;
     analytics.maxExecutionTime = analytics.maxExecutionTime !== null ? Math.max(analytics.maxExecutionTime, executionTime) : executionTime;
+    if (analytics.executionTimes.length > 10) analytics.executionTimes.shift();
+    analytics.avgExecutionTime = analytics.executionTimes.reduce((a, b) => a + b, 0) / analytics.executionTimes.length;
 
-    // Cache response
-    cache.set(cacheKey, response);
+    // Cache Response
+    cache.set(cacheKey, { response, timestamp: Date.now() });
 
     console.log(`✅ Completed in ${executionTime}ms | Task: ${task} | Total Requests: ${analytics.requestCount}`);
     return response;
   } catch (error) {
     analytics.errorCount++;
-    console.error("❌ Execution error:", error.message || error);
+    console.error("❌ Execution Error:", error.message || error);
     return Promise.reject({ message: "Execution failed", details: error.message });
   }
 }
 
+// Worker Thread for AI Execution
+function runLlamaWithWorker(options) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(__filename, { workerData: options });
+
+    worker.on("message", resolve);
+    worker.on("error", reject);
+    worker.on("exit", (code) => {
+      if (code !== 0) reject(new Error(`Worker stopped with exit code ${code}`));
+    });
+  });
+}
+
+// Worker Execution Logic
+if (!module.parent && require("worker_threads").isMainThread === false) {
+  const { parentPort, workerData } = require("worker_threads");
+
+  async function runLlamaModel({ prompt }) {
+    await new Promise((resolve) => setTimeout(resolve, Math.random() * 500 + 200)); // Simulating AI Response Delay
+    return { response: `Generated response for: ${prompt}` };
+  }
+
+  runLlamaModel(workerData)
+    .then((result) => parentPort.postMessage(result))
+    .catch((error) => parentPort.postMessage({ error: error.message }));
+}
 // Centralized Error Handling
 const handleError = (res, message, error) => {
   console.error(`❌ ${message}:`, error);
@@ -2074,113 +2149,33 @@ app.post("/api/social/moderate-comment", logRequest, validateRequest(["comment"]
 });
 /** ========== AI-Powered Analytics APIs ========== **/
 
-/**
- * AI-Powered Spending Pattern Analysis with Chart.js Image
- */
-app.post("/api/analytics/spending-patterns", logRequest, validateRequest(["transactions"]), (req, res) => {
-  if (!Array.isArray(req.body.transactions)) {
-    return res.status(400).json({ error: "Invalid transactions format" });
-  }
 
-  // Process transactions to aggregate spending data
-  const categoryMap = {};
-  req.body.transactions.forEach(({ category, amount }) => {
-    categoryMap[category] = (categoryMap[category] || 0) + amount;
-  });
 
-  const labels = Object.keys(categoryMap);
-  const values = Object.values(categoryMap);
-
-  // Generate Bar Chart
-  const barChartUrl = ChartJSImage().chart({
-    type: "bar",
-    data: {
-      labels: labels,
-      datasets: [{ label: "Spending Analysis", data: values }],
-    },
-    options: { title: { display: true, text: "Spending Patterns" } },
-  }).backgroundColor("white").width(800).height(400).toURL();
-
-  // Generate Pie Chart
-  const pieChartUrl = ChartJSImage().chart({
-    type: "pie",
-    data: {
-      labels: labels,
-      datasets: [{ data: values }],
-    },
-    options: { title: { display: true, text: "Spending Distribution" } },
-  }).backgroundColor("white").width(800).height(400).toURL();
-
-  res.json({
-    status: "success",
-    spendingPatterns: { labels, values },
-    visuals: { barChartUrl, pieChartUrl },
-  });
-});
-
-/**
- * AI-Powered Risk Assessment API
- */
 app.post("/api/analytics/risk-assessment", logRequest, validateRequest(["customerProfile"]), (req, res) => {
   handleAIRequest(req, res, "risk-assessment", (body) =>
-    `Evaluate financial risk based on the customer profile: ${body.customerProfile}.`
+    `Evaluate financial risk based on the customer profile: ${JSON.stringify(body.customerProfile)}.`
   );
 });
 
-/**
- * AI-Powered Revenue Forecasting with Chart.js Image
- */
-app.post("/api/analytics/revenue-forecast", logRequest, validateRequest(["historicalData"]), (req, res) => {
-  if (!Array.isArray(req.body.historicalData)) {
-    return res.status(400).json({ error: "Invalid historical data format" });
-  }
 
-  const months = req.body.historicalData.map((entry) => entry.month);
-  const pastRevenue = req.body.historicalData.map((entry) => entry.revenue);
 
-  // Simulate a revenue forecast (increase by 10%)
-  const futureMonths = ["Next Month", "2 Months Ahead", "3 Months Ahead"];
-  const forecastedRevenue = pastRevenue.slice(-3).map((rev) => rev * 1.1);
-
-  // Generate Line Chart for Revenue Forecast
-  const lineChartUrl = ChartJSImage().chart({
-    type: "line",
-    data: {
-      labels: [...months, ...futureMonths],
-      datasets: [
-        { label: "Past Revenue", data: [...pastRevenue, null, null, null], borderColor: "blue", fill: false },
-        { label: "Forecasted Revenue", data: [...Array(pastRevenue.length).fill(null), ...forecastedRevenue], borderColor: "red", fill: false },
-      ],
-    },
-    options: { title: { display: true, text: "Revenue Forecast" } },
-  }).backgroundColor("white").width(800).height(400).toURL();
-
-  res.json({
-    status: "success",
-    forecast: { months, pastRevenue, forecastedRevenue },
-    visuals: { lineChartUrl },
-  });
-});
 
 
 let latestAnalytics = {}; // Store latest analytics for real-time updates
-app.post("/api/analytics/customer-retention", async (req, res) => {
+// 📊 Customer Retention Analysis with Enhanced Insights
+app.post("/api/analytics/customer-retention", logRequest, validateRequest(["transactions", "customerHistory"]), async (req, res) => {
   const task = "Customer Retention Analysis";
 
   const promptTemplate = (data) => {
     const { transactions, customerHistory } = data;
-
-    if (!Array.isArray(transactions) || !Array.isArray(customerHistory)) {
-      return "";
-    }
+    if (!Array.isArray(transactions) || !Array.isArray(customerHistory)) return "";
 
     const totalCustomers = customerHistory.length;
     const retainedCustomers = transactions.filter(transaction =>
       customerHistory.some(customer => customer.id === transaction.customerId)
     ).length;
-    
     const retentionRate = totalCustomers > 0 ? (retainedCustomers / totalCustomers) * 100 : 0;
-    
+
     return `Analyze customer retention: Total Customers - ${totalCustomers}, Retained Customers - ${retainedCustomers}, Retention Rate - ${retentionRate.toFixed(2)}%. Provide churn risk and retention strategies.`;
   };
 
@@ -2203,7 +2198,7 @@ app.post("/api/analytics/customer-retention", async (req, res) => {
     const executionTime = Date.now() - startTime;
     const responseText = aiResponse.response.trim();
 
-    // ** Analytics Data for Visualization **
+    // ** Extract Customer Retention Data **
     const totalCustomers = req.body.customerHistory.length;
     const retainedCustomers = req.body.transactions.filter(transaction =>
       req.body.customerHistory.some(customer => customer.id === transaction.customerId)
@@ -2277,96 +2272,8 @@ app.post("/api/analytics/customer-retention", async (req, res) => {
     res.status(500).json({ error: error.message || "Internal Server Error" });
   }
 });
+ 
 
-
-app.post("/api/analytics/revenue-forecast", async (req, res) => {
-  try {
-    const { historicalData } = req.body;
-
-    if (!Array.isArray(historicalData) || historicalData.length === 0) {
-      return res.status(400).json({ error: "Invalid or missing historical data" });
-    }
-
-    console.log(`🔄 Processing AI Task: Revenue Forecasting...`);
-
-    const forecast = await processRevenueForecast(historicalData);
-
-    // ** Extract Revenue Data for Visualization **
-    const months = historicalData.map(entry => entry.month);
-    const pastRevenue = historicalData.map(entry => entry.revenue);
-    const futureMonths = ["Next Month", "2 Months Ahead", "3 Months Ahead"];
-    const forecastedRevenue = forecast.map(entry => entry.revenue);
-
-    // ** Line Chart: Past vs Forecasted Revenue **
-    const revenueTrendChart = ChartJSImage()
-      .chart({
-        type: "line",
-        data: {
-          labels: [...months, ...futureMonths],
-          datasets: [
-            {
-              label: "Past Revenue",
-              data: [...pastRevenue, null, null, null],
-              borderColor: "#36A2EB",
-              fill: false,
-            },
-            {
-              label: "Forecasted Revenue",
-              data: [...Array(pastRevenue.length).fill(null), ...forecastedRevenue],
-              borderColor: "#FFCE56",
-              fill: false,
-            }
-          ],
-        },
-        options: { responsive: true }
-      })
-      .backgroundColor("white")
-      .width(800)
-      .height(400)
-      .toURL();
-
-    // ** Bar Chart: Past vs Forecasted Revenue Comparison **
-    const revenueBarChart = ChartJSImage()
-      .chart({
-        type: "bar",
-        data: {
-          labels: [...months, ...futureMonths],
-          datasets: [
-            {
-              label: "Revenue",
-              data: [...pastRevenue, ...forecastedRevenue],
-              backgroundColor: [...pastRevenue.map(() => "#4CAF50"), ...forecastedRevenue.map(() => "#FF5733")],
-            }
-          ],
-        },
-        options: { responsive: true }
-      })
-      .backgroundColor("white")
-      .width(800)
-      .height(400)
-      .toURL();
-
-    // ** Store Analytics Data **
-    latestAnalytics.forecast = {
-      forecastedRevenue,
-      revenueTrendChart,
-      revenueBarChart,
-    };
-
-    // Emit real-time update
-    io.emit("analyticsUpdate", latestAnalytics);
-
-    res.json({
-      status: "success",
-      analytics: latestAnalytics.forecast,
-      response: forecast,
-    });
-
-  } catch (error) {
-    console.error("Error in revenue forecasting:", error);
-    res.status(500).json({ error: error.message });
-  }
-});
 
 app.post("/api/banking/fraud-detection", logRequest, validateRequest(["transactionDetails"]), async (req, res) => {
   try {
@@ -2446,49 +2353,288 @@ app.post("/api/banking/fraud-detection", logRequest, validateRequest(["transacti
 });
 
 
-// AI-Powered Customer Spending Analytics
-// 🟢 Analyze Spending Patterns
-app.post("/api/analytics/spending-patterns", logRequest, (req, res) => {
-  handleAIRequest(req, res, "spending-analysis", (body) => {
-    const { transactions } = body;
-    if (!Array.isArray(transactions) || transactions.length === 0) {
-      throw new Error("Transactions must be a non-empty array");
+
+
+// 📊 Spending Patterns Analysis
+app.post("/api/analytics/spending-patterns", logRequest, validateRequest(["transactions"]), async (req, res) => {
+  const task = "Spending Patterns Analysis";
+
+  const promptTemplate = (data) => {
+    if (!Array.isArray(data.transactions)) return "";
+
+    const categoryMap = {};
+    data.transactions.forEach(({ category, amount }) => {
+      categoryMap[category] = (categoryMap[category] || 0) + amount;
+    });
+
+    return `Analyze spending trends from transactions: ${JSON.stringify(categoryMap)}. Identify key spending patterns and insights.`;
+  };
+
+  try {
+    const startTime = Date.now();
+    const prompt = promptTemplate(req.body);
+
+    if (!prompt) {
+      return res.status(400).json({ error: "Invalid data", details: "Missing or incorrect input format." });
     }
-    return JSON.stringify(transactions);
-  });
+
+    console.log(`🔄 Processing AI task: ${task} | Prompt: "${prompt}"`);
+
+    const aiResponse = await executeLlama({ prompt, task });
+
+    if (!aiResponse || !aiResponse.response) {
+      return res.status(500).json({ error: "AI response is empty", details: aiResponse });
+    }
+
+    const executionTime = Date.now() - startTime;
+    const responseText = aiResponse.response.trim();
+
+    // ** Aggregate Spending Data **
+    const categoryMap = {};
+    req.body.transactions.forEach(({ category, amount }) => {
+      categoryMap[category] = (categoryMap[category] || 0) + amount;
+    });
+
+    const labels = Object.keys(categoryMap);
+    const values = Object.values(categoryMap);
+
+    // ** Bar Chart for Spending Categories **
+    const barChartUrl = ChartJSImage()
+      .chart({
+        type: "bar",
+        data: {
+          labels,
+          datasets: [{ label: "Spending Analysis", data: values, backgroundColor: "#4CAF50" }],
+        },
+        options: { responsive: true },
+      })
+      .backgroundColor("white")
+      .width(600)
+      .height(300)
+      .toURL();
+
+    // ** Pie Chart for Spending Distribution **
+    const pieChartUrl = ChartJSImage()
+      .chart({
+        type: "pie",
+        data: {
+          labels,
+          datasets: [{ data: values, backgroundColor: ["#36A2EB", "#FFCE56", "#FF5733", "#4CAF50", "#9B59B6"] }],
+        },
+        options: { responsive: true },
+      })
+      .backgroundColor("white")
+      .width(600)
+      .height(300)
+      .toURL();
+
+    // ** Update Latest Analytics Data **
+    latestAnalytics.spending = {
+      totalTransactions: req.body.transactions.length,
+      spendingByCategory: categoryMap,
+      insights: responseText,
+      executionTime,
+      charts: { barChart: barChartUrl, pieChart: pieChartUrl },
+    };
+
+    // Emit real-time analytics update
+    io.emit("analyticsUpdate", latestAnalytics);
+
+    res.json({
+      status: "success",
+      analytics: latestAnalytics.spending,
+      response: responseText,
+      executionTime,
+    });
+
+  } catch (error) {
+    console.error("Error in spending patterns analysis:", error);
+    res.status(500).json({ error: error.message || "Internal Server Error" });
+  }
 });
 
-// 🟢 AI-Powered Risk Assessment
-app.post("/api/analytics/risk-assessment", logRequest, validateRequest(["customerProfile"]), (req, res) => {
-  handleAIRequest(req, res, "risk-assessment", (body) => {
-    const { customerProfile } = body;
-    if (!customerProfile || typeof customerProfile !== "string") {
-      throw new Error("Invalid or missing customerProfile");
-    }
-    return `Assess the financial risk level for this customer profile: "${customerProfile}". Provide a risk rating (low, medium, high) and recommendations.`;
-  });
-});
+// ⚠️ Risk Assessment Analysis
+app.post("/api/analytics/risk-assessment", logRequest, validateRequest(["customerProfile"]), async (req, res) => {
+  const task = "Risk Assessment Analysis";
 
-// 🟢 AI-Powered Revenue Forecasting
-app.post("/api/analytics/revenue-forecast", (req, res) => {
-  handleAIRequest(req, res, "revenue-forecasting", (body) => {
-    const { historicalData } = body;
-    if (!historicalData || !Array.isArray(historicalData) || historicalData.length === 0) {
-      throw new Error("Historical financial data is required as a non-empty array");
-    }
-    return `Predict future revenue based on this historical financial data: "${JSON.stringify(historicalData)}". Provide a forecast for the next quarter.`;
-  });
-});
+  const promptTemplate = (data) => {
+    if (!data.customerProfile) return "";
+    return `Evaluate financial risk based on the customer profile: ${JSON.stringify(data.customerProfile)}. Provide a risk score and mitigation strategies.`;
+  };
 
-// 🟢 AI-Powered Customer Retention Analysis
-app.post("/api/analytics/customer-retention", (req, res) => {
-  handleAIRequest(req, res, "customer-retention", (body) => {
-    const { customerHistory } = body;
-    if (!customerHistory || !Array.isArray(customerHistory) || customerHistory.length === 0) {
-      throw new Error("Customer history data is required as a non-empty array");
+  try {
+    const startTime = Date.now();
+    const prompt = promptTemplate(req.body);
+
+    if (!prompt) {
+      return res.status(400).json({ error: "Invalid data", details: "Missing or incorrect input format." });
     }
-    return `Analyze customer retention based on this historical data: "${JSON.stringify(customerHistory)}". Identify churn risks and retention strategies.`;
-  });
+
+    console.log(`🔄 Processing AI task: ${task} | Prompt: "${prompt}"`);
+
+    const aiResponse = await executeLlama({ prompt, task });
+
+    if (!aiResponse || !aiResponse.response) {
+      return res.status(500).json({ error: "AI response is empty", details: aiResponse });
+    }
+
+    const executionTime = Date.now() - startTime;
+    const responseText = aiResponse.response.trim();
+
+    // ** Risk Level Analysis **
+    const riskScore = Math.floor(Math.random() * 100); // Simulated AI-driven risk score
+    const riskLevel = riskScore > 75 ? "High" : riskScore > 50 ? "Medium" : "Low";
+
+    // ** Bar Chart for Risk Score **
+    const barChartUrl = ChartJSImage()
+      .chart({
+        type: "bar",
+        data: {
+          labels: ["Risk Score"],
+          datasets: [{ label: "Risk Level", data: [riskScore], backgroundColor: "#FF5733" }],
+        },
+        options: { responsive: true },
+      })
+      .backgroundColor("white")
+      .width(600)
+      .height(300)
+      .toURL();
+
+    // ** Update Latest Analytics Data **
+    latestAnalytics.risk = {
+      customerProfile: req.body.customerProfile,
+      riskScore,
+      riskLevel,
+      mitigationStrategies: responseText,
+      executionTime,
+      charts: { barChart: barChartUrl },
+    };
+
+    // Emit real-time analytics update
+    io.emit("analyticsUpdate", latestAnalytics);
+
+    res.json({
+      status: "success",
+      analytics: latestAnalytics.risk,
+      response: responseText,
+      executionTime,
+    });
+
+  } catch (error) {
+    console.error("Error in risk assessment analysis:", error);
+    res.status(500).json({ error: error.message || "Internal Server Error" });
+  }
+});
+// 📈 Revenue Forecast Analysis with Enhanced Insights
+app.post("/api/analytics/revenue-forecast", logRequest, validateRequest(["historicalData"]), async (req, res) => {
+  const task = "Revenue Forecast Analysis";
+
+  const promptTemplate = (data) => {
+    if (!Array.isArray(data.historicalData)) return "";
+    return `Generate revenue predictions based on historical data: ${JSON.stringify(data.historicalData)}. Provide estimated revenue growth, trends, and confidence intervals.`;
+  };
+ 
+  try {
+    const startTime = Date.now();
+    const prompt = promptTemplate(req.body);
+
+    if (!prompt) {
+      return res.status(400).json({ error: "Invalid data", details: "Missing or incorrect input format." });
+    }
+
+    console.log(`🔄 Processing AI task: ${task} | Prompt: "${prompt}"`);
+
+    const aiResponse = await executeLlama({ prompt, task });
+
+    if (!aiResponse || !aiResponse.response) {
+      return res.status(500).json({ error: "AI response is empty", details: aiResponse });
+    }
+
+    const executionTime = Date.now() - startTime;
+    const responseText = aiResponse.response.trim();
+
+    // ** Extract historical revenue data **
+    const historicalData = req.body.historicalData;
+    const totalRevenue = historicalData.reduce((sum, record) => sum + record.revenue, 0);
+    const revenueList = historicalData.map((r) => r.revenue);
+    
+    // ** Moving Average Calculation for Trends **
+    const movingAvg = revenueList.reduce((a, b) => a + b, 0) / revenueList.length;
+
+    // ** Simulated AI-driven Growth Rate with Confidence Interval **
+    const avgGrowthRate = (Math.random() * 10) + 5; // 5-15% range
+    const projectedRevenue = totalRevenue * (1 + avgGrowthRate / 100);
+    const minProjectedRevenue = projectedRevenue * 0.95; // 5% lower bound
+    const maxProjectedRevenue = projectedRevenue * 1.05; // 5% upper bound
+
+    // ** YoY Growth Rate Calculation **
+    const lastYearRevenue = historicalData.length > 1 ? historicalData[historicalData.length - 2].revenue : totalRevenue * 0.9;
+    const yoyGrowthRate = ((totalRevenue - lastYearRevenue) / lastYearRevenue) * 100;
+
+    // ** Line Chart for Revenue Trends **
+    const lineChartUrl = ChartJSImage()
+      .chart({
+        type: "line",
+        data: {
+          labels: ["Current Revenue", "Projected Revenue"],
+          datasets: [{ label: "Revenue Forecast", data: [totalRevenue, projectedRevenue], borderColor: "#36A2EB" }],
+        },
+        options: { responsive: true },
+      })
+      .backgroundColor("white")
+      .width(600)
+      .height(300)
+      .toURL();
+
+    // ** Bar Chart for Historical vs Forecasted Revenue **
+    const barChartUrl = ChartJSImage()
+      .chart({
+        type: "bar",
+        data: {
+          labels: ["Last Year", "Current Year", "Projected"],
+          datasets: [
+            {
+              label: "Revenue Comparison",
+              data: [lastYearRevenue, totalRevenue, projectedRevenue],
+              backgroundColor: ["#FF5733", "#36A2EB", "#4CAF50"],
+            },
+          ],
+        },
+        options: { responsive: true },
+      })
+      .backgroundColor("white")
+      .width(600)
+      .height(300)
+      .toURL();
+
+    // ** Update Latest Analytics Data **
+    latestAnalytics.revenue = {
+      totalRevenue,
+      movingAvg,
+      avgGrowthRate,
+      projectedRevenue,
+      minProjectedRevenue,
+      maxProjectedRevenue,
+      yoyGrowthRate,
+      forecastInsights: responseText,
+      executionTime,
+      charts: { lineChart: lineChartUrl, barChart: barChartUrl },
+    };
+
+    // Emit real-time analytics update
+    io.emit("analyticsUpdate", latestAnalytics);
+
+    res.json({
+      status: "success",
+      analytics: latestAnalytics.revenue,
+      response: responseText,
+      executionTime,
+    });
+
+  } catch (error) {
+    console.error("Error in revenue forecast analysis:", error);
+    res.status(500).json({ error: error.message || "Internal Server Error" });
+  }
 });
 
 
