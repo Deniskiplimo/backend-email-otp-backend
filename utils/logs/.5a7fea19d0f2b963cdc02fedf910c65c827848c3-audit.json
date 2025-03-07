@@ -6,11 +6,6 @@
     "auditLog": "C:\\Users\\d.kiplimo\\backend-email-otp-backend\\utils\\logs\\.5a7fea19d0f2b963cdc02fedf910c65c827848c3-audit.json",
     "files": [
         {
-            "date": 1740036637523,
-            "name": "C:\\Users\\d.kiplimo\\backend-email-otp-backend\\utils\\logs\\combined-2025-02-20.log",
-            "hash": "b237a77a556aec6c79d7b86971a64e44f282404153a600b751956d494a2c25ba"
-        },
-        {
             "date": 1740377295533,
             "name": "C:\\Users\\d.kiplimo\\backend-email-otp-backend\\utils\\logs\\combined-2025-02-24.log",
             "hash": "4f6c73cb351837b79030e4df4fe5e2458a6197e09c6de58297001f514908af0e"
@@ -29,6 +24,11 @@
             "date": 1740635020523,
             "name": "C:\\Users\\d.kiplimo\\backend-email-otp-backend\\utils\\logs\\combined-2025-02-27.log",
             "hash": "4fc9e442d8d729bc849526a4f11c012f0b63b2360bff2a7373be71db3da2494f"
+        },
+        {
+            "date": 1741353704173,
+            "name": "C:\\Users\\d.kiplimo\\backend-email-otp-backend\\utils\\logs\\combined-2025-03-07.log",
+            "hash": "75cd6477ca0d27bf4857c114708981993933c5ee2dd5912b4620640bf0b974f2"
         }
     ],
     "hashType": "sha256"

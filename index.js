@@ -1959,7 +1959,7 @@ app.post("/api/social/analyze-trends", logRequest, (req, res) => {
     return `Analyze social media trends on: "${topic}".`;
   });
 });
-
+ 
 // 📩 AI-Generated SMS
 const sendDebtReminderSMS = async (debtor) => {
   const task = "Debt Collection SMS";
