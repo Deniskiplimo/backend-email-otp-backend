@@ -680,6 +680,39 @@ async function downloadFile(url, outputPath) {
     writer.on("error", reject);
   });
 }
+// ✅ AI Model Configurations
+const MODELS = [
+  {
+    name: "TinyLlama",
+    url: "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+    filename: "tinyllama.Q4_K_M.gguf",
+    port: 8080,
+  },
+  {
+    name: "Mistral",
+    url: "https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.1-GGUF/resolve/main/mistral-7b-instruct-v0.1.Q4_K_M.gguf",
+    filename: "mistral.Q4_K_M.gguf",
+    port: 8081,
+  },
+  {
+    name: "Llama-3",
+    url: "https://huggingface.co/meta-llama/Meta-Llama-3-8B-GGUF/resolve/main/meta-llama-3-8b.Q4_K_M.gguf",
+    filename: "meta-llama-3-8b.Q4_K_M.gguf",
+    port: 8082,
+  },
+  {
+    name: "CodeLlama",
+    url: "https://huggingface.co/TheBloke/CodeLlama-7B-GGUF/resolve/main/codellama-7b.Q4_K_M.gguf",
+    filename: "codellama-7b.Q4_K_M.gguf",
+    port: 8083,
+  },
+  {
+    name: "Mixtral",
+    url: "https://huggingface.co/mistralai/Mixtral-8x7B-Instruct-v0.1-GGUF/resolve/main/mixtral-8x7b-instruct-v0.1.Q4_K_M.gguf",
+    filename: "mixtral-8x7b.Q4_K_M.gguf",
+    port: 8084,
+  },
+];
 
 // ✅ Function to start the AI server
 async function setupModel(port) {

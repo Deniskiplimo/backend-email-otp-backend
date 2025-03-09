@@ -1,0 +1,10 @@
+Title: "Dog Running in a Field"
+
+Introduction: 
+Welcome to our video tutorial on how to create a simple animation of a dog running in a field. This tutorial will guide you through the process of creating an animated dog running in a field, from start to finish.
+
+Key Points:
+- Create a basic skeleton for your animation using the Canvas API.
+- Add movement and behavior to your dog by modifying its position, size, and color.
+- Use CSS animations to create smooth transitions between frames.
+- Test y...

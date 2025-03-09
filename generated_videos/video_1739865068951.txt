@@ -1,0 +1,10 @@
+Title: "Dog Running in a Field"
+
+Introduction (1-2 sentences): In this video, we will show you how to create a professional and visually appealing 3D animation of a dog running in a field. The animation will be accompanied by a clear narration that explains each step of the process.
+
+Key Points:
+1. Create a new project in Blender (or any other 3D modeling software)
+2. Import the 3D model of your dog into Blender
+3. Add a rigid body to the model
+4. Set up the camera and lighting
+5. Create a simpl...
