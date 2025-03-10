@@ -1,0 +1,10 @@
+Title: "Dog Running in a Field"
+
+Introduction: 
+Welcome to our video tutorial on how to create a professional dog running in a field. Our instructor, Mr. Smith, will guide you through the process of creating an animated scene with your favorite furry friend.
+
+Key Points: 
+1. Choose a suitable background image for your animation.
+2. Create a simple character model using Blender or Maya.
+3. Use a scripting language like Python or JavaScript to control the movement and behavior of your dog.
+4. Add ...

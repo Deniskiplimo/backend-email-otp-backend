@@ -722,21 +722,18 @@
     }
   }
 },
-  "/api/analytics/revenue-forecast": {
+ "/api/analytics/revenue-forecast": {
   "post": {
     "tags": ["Llama"],
     "summary": "Predict revenue forecast",
     "description": "Generates revenue predictions for the next quarter using historical financial data.",
- "parameters": [
-  {
-    "name": "historicalData",
-    "in": "body",
-    "required": true,
-    "description": "Array of historical financial data for forecasting, JSON-encoded",
-    "schema": {
-      "type": "object",
-      "properties": {
-        "historicalData": {
+    "parameters": [
+      {
+        "name": "historicalData",
+        "in": "body",
+        "required": true,
+        "description": "Array of historical financial data for forecasting, JSON-encoded",
+        "schema": {
           "type": "array",
           "items": {
             "type": "object",
@@ -747,22 +744,17 @@
               "revenue": {
                 "type": "number"
               }
-            }
+            },
+            "example": [
+              {
+                "quarter": "Q1 2024",
+                "revenue": 50000
+              }
+            ]
           }
         }
-      },
-      "example": {
-        "historicalData": [
-          {
-            "quarter": "Q1 2024",
-            "revenue": 50000
-          }
-        ]
       }
-    }
-  }
-],
-
+    ],
     "responses": {
       "200": {
         "description": "Successful forecast prediction",
@@ -794,6 +786,7 @@
     }
   }
 }
+
 , 
 "/api/analytics/customer-retention": {
   "post": {

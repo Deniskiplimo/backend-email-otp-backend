@@ -6,39 +6,9 @@
     "auditLog": "/home/denis/backend-email-otp-backend/utils/logs/.460cc6c7ee40fe11e406bb76cbb5c166f2568c76-audit.json",
     "files": [
         {
-            "date": 1738676535869,
-            "name": "/home/denis/backend-email-otp-backend/utils/logs/combined-2025-02-04.log",
-            "hash": "387aa6689ccfa42d954f855af8c80b9c8cf11417718b71747ee21ba384aabcdf"
-        },
-        {
-            "date": 1738702813354,
-            "name": "/home/denis/backend-email-otp-backend/utils/logs/combined-2025-02-05.log",
-            "hash": "d11cb1f849eb9c20303f4d5623768c4baa18a0ec1e1c99e4ea3b191c6d7292bf"
-        },
-        {
-            "date": 1739432038314,
-            "name": "/home/denis/backend-email-otp-backend/utils/logs/combined-2025-02-13.log",
-            "hash": "2fc840bdb3efab9655a663a3ab76d6979bb4b895aa37d9162db040a35baa6b60"
-        },
-        {
-            "date": 1739527320069,
-            "name": "/home/denis/backend-email-otp-backend/utils/logs/combined-2025-02-14.log",
-            "hash": "4eaad404ce9d0f914a4a90b30ff65e8070e8f4335c475f79fcd4e09eb7cf1334"
-        },
-        {
-            "date": 1739607342624,
-            "name": "/home/denis/backend-email-otp-backend/utils/logs/combined-2025-02-15.log",
-            "hash": "e4ef71c7782f2ef20b11ab83658426b45849e008e56eb7e8eb5fcb5ce0702783"
-        },
-        {
-            "date": 1739653253943,
-            "name": "/home/denis/backend-email-otp-backend/utils/logs/combined-2025-02-16.log",
-            "hash": "5c114bdd3e39aaa96c3018c8201d496d74628e1429f7017d40e237bc0c2dfa12"
-        },
-        {
-            "date": 1739740050073,
-            "name": "/home/denis/backend-email-otp-backend/utils/logs/combined-2025-02-17.log",
-            "hash": "afa461232e7d37e1a7ff63958adacff409f9a512614995021725064d0392d6c4"
+            "date": 1741528013606,
+            "name": "/home/denis/backend-email-otp-backend/utils/logs/combined-2025-03-09.log",
+            "hash": "7cb4c17482d8a0b8a967d05c78e43d9c1dbdab80ab883bf490a98c77c74d009e"
         }
     ],
     "hashType": "sha256"

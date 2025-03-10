@@ -26,12 +26,7 @@ async function generalLlama(instruction, port, options = {}) {
         }
     };
 
-    const api = llamacpp.Api({
-        baseUrl: {
-            host: "localhost",  // Ensure the model server is running on localhost
-            port: `${port}`,
-        },
-    });
+ 
 
     const serverUrl = `http://localhost:${port}`;
     const isServerReady = await checkServerAvailability(serverUrl);

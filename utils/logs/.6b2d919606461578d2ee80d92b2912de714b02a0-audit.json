@@ -6,39 +6,9 @@
     "auditLog": "/home/denis/backend-email-otp-backend/utils/logs/.6b2d919606461578d2ee80d92b2912de714b02a0-audit.json",
     "files": [
         {
-            "date": 1738676535865,
-            "name": "/home/denis/backend-email-otp-backend/utils/logs/error-2025-02-04.log",
-            "hash": "987bc6e324d7108412e978826b4fb25792190cefb896857daf093f6e79cb7bb5"
-        },
-        {
-            "date": 1738702813348,
-            "name": "/home/denis/backend-email-otp-backend/utils/logs/error-2025-02-05.log",
-            "hash": "52418158a5cd27b4ca2a3bb5695af40d3532294716f6a8822e3bbc3581aae5a2"
-        },
-        {
-            "date": 1739432038310,
-            "name": "/home/denis/backend-email-otp-backend/utils/logs/error-2025-02-13.log",
-            "hash": "79ddee53633b48183e783d3d1bdf5cdab4fe358ca02e31fe53695201994a3825"
-        },
-        {
-            "date": 1739527320064,
-            "name": "/home/denis/backend-email-otp-backend/utils/logs/error-2025-02-14.log",
-            "hash": "e1b005739a15bd58f05dbed1d47f8f7e8a6d96a20a0c47bb5859736d22ecebea"
-        },
-        {
-            "date": 1739607342619,
-            "name": "/home/denis/backend-email-otp-backend/utils/logs/error-2025-02-15.log",
-            "hash": "9828c5ee753c71e9de22a17bc7590b73cd3a8fd75b7ffdaf985fd2c5b73dc51d"
-        },
-        {
-            "date": 1739653253938,
-            "name": "/home/denis/backend-email-otp-backend/utils/logs/error-2025-02-16.log",
-            "hash": "36a387815547408827567f2a526d30240ff2defc10daef04385afdbf53a02475"
-        },
-        {
-            "date": 1739740050067,
-            "name": "/home/denis/backend-email-otp-backend/utils/logs/error-2025-02-17.log",
-            "hash": "cb6746032658a325940d1c0716cfb962bd1ae89c70adaec97d711ab826d16afd"
+            "date": 1741528013599,
+            "name": "/home/denis/backend-email-otp-backend/utils/logs/error-2025-03-09.log",
+            "hash": "a9b3691644ada09571094312a4ee8b58015dd31620925c47bfd9e5c4028f6818"
         }
     ],
     "hashType": "sha256"

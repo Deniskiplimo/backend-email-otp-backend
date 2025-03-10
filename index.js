@@ -4,24 +4,18 @@ const moment = require("moment");
 const { generateCodeWithCodeLlama } = require('./codeLlama');
 const path = require('path');
 const { llamacpp, streamText } = require("modelfusion");
-const ip = '8.8.8.8';
-const http = require("http");
-const { Server } = require("socket.io");
-const ChartJSImage = require("chart.js-image"); // Generate graphs in backend
-
-const open = require("open");
-const crypto = require("crypto");
-const NodeCache = require("node-cache");
-const { graphqlHTTP } = require("express-graphql"); 
-const { buildSchema } = require("graphql");
-const cache = new NodeCache({ stdTTL: 300 }); // Cache responses for 5 minutes
-const os = require('os');
+const ip = '8.8.8.8'; 
+const os = require('os'); 
 const { body, validationResult ,query} = require("express-validator");
+const { buildSchema } = require("graphql");
+const MODELS = require("./models/llama");
+PORT=3000
+const Port = 3000; // Use the desired port number for the main server
+const AI_SERVER_PORT = 4000; // Use the desired port number for the AI server
 
-const PORT = process.env.PORT || 3000;
 const { parentPort, workerData, isMainThread } = require("worker_threads");
 const cors = require("cors");
-      
+  
 const morgan = require("morgan");
 const authenticateRefreshToken = require('./middleware/authenticateRefreshToken');
 const express = require('express');   
@@ -48,16 +42,20 @@ const { spawn,exec,execSync } = require('child_process');
 const axios = require('axios');
 const fs = require('fs'); 
 const app = express();
-const port = process.env.APP_PORT || 3000; // Use APP_PORT for the application server
-const aiRoutes = require('./routes/aiRoutes');
 
-const otpRoutes = require('./routes/otpRoutes');
+const aiRoutes = require('./routes/aiRoutes');
+const { graphqlHTTP } = require("express-graphql");
+
+const otpRoutes = require('./routes/otpRoutes'); 
 app.use(bodyParser.json());
 const winston = require('winston');
 require('winston-daily-rotate-file'); // Make sure to require this
 app.use(express.json({ limit: "1mb" }));
 app.use(cors());
+const { Server } = require("socket.io");
 app.use(helmet());
+const http = require("http"); 
+
 app.use(morgan("combined"));
 const server = http.createServer(app);
 const transport = new winston.transports.DailyRotateFile({
@@ -523,7 +521,7 @@ app.post('/api/change-password', changePasswordLimiter, async (req, res) => {
       success: false,
       message: 'New password must be at least 8 characters long, contain at least one letter, one number, and one special character.',
     });
-  }
+  } 
 
   try {
     // Find the user in the database
@@ -665,6 +663,7 @@ app.post('/api/logout', authenticateToken, async (req, res) => {
     res.status(STATUS_CODES.INTERNAL_SERVER_ERROR).json({ error: 'Error logging out' });
   }
 });
+
 const LLAMA_FILE_WIN = "llamafile.exe";
 const LLAMA_FILE_LINUX = "llamafile";
 const MODEL_FILE = "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf";
@@ -694,419 +693,218 @@ async function downloadFile(url, outputPath) {
 
   return new Promise((resolve, reject) => {
     writer.on("finish", () => {
-      console.log(`\n✅ Download of ${outputPath} completed.`);
-      if (process.platform !== "win32") fs.chmodSync(outputPath, 0o755); // Add execute permission on Linux/Mac
+      console.log(`\nDownload of ${outputPath} completed.`);
+      fs.chmodSync(outputPath, 0o755); // Add execute permissions
       resolve();
     });
     writer.on("error", reject);
   });
 }
 
-// ✅ Kill previous Llama instances
-function killPreviousLlama() {
-  try {
-    if (process.platform === "win32") {
-      execSync("taskkill /IM llamafile.exe /F", { stdio: "ignore" }); // Windows
-    } else {
-      execSync("pkill -f llamafile", { stdio: "ignore" }); // Linux/macOS
-    }
-  } catch (err) {
-    console.log("No previous Llama instance found.");
-  }
-}
 
 // ✅ Function to start the AI server
-async function setupModel(port) {
+async function setupModel(port, modelName = "tinyLlama") {
   try {
-    await downloadFile(
-      "https://github.com/Mozilla-Ocho/llamafile/releases/download/0.6/llamafile-0.6",
-      llamaFile
-    );
-    await downloadFile(
-      "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
-      MODEL_FILE
-    );
+    // Check if the port is already in use
+    const portInUse = await checkIfPortInUse(port);
+    if (portInUse) {
+      console.log(`AI server is already running on port ${port}.`);
+      return;
+    }
 
-    console.log(`🚀 Starting AI server on port ${port}...`);
+    const model = MODELS[modelName]; // Get the selected model dynamically
+    if (!model) throw new Error(`Model '${modelName}' not found in MODELS.`);
 
-    const command = process.platform === "win32"
-      ? `${llamaFile} -m ${MODEL_FILE} --nobrowser --port ${port}`
-      : `./${llamaFile} -m ${MODEL_FILE} --nobrowser --port ${port}`;
+    // Download llamafile executable if not exists
+    if (!fs.existsSync("llamafile.exe")) {
+      await downloadFile(
+        "https://github.com/Mozilla-Ocho/llamafile/releases/download/0.6/llamafile-0.6",
+        "llamafile.exe"
+      );
+    } else {
+      console.log("llamafile.exe already exists, skipping download...");
+    }
 
-    const processInstance = exec(command);
+    // Download selected model if not exists
+    if (!fs.existsSync(model.filename)) {
+      await downloadFile(model.url, model.filename);
+    } else {
+      console.log(`${model.filename} already exists, skipping download...`);
+    }
 
-    processInstance.stdout.on("data", (data) => {
-      console.log(`Llama Output: ${data}`);
+    console.log(`Starting AI server on port ${port} using model: ${model.name}...`);
+    
+    const isWindows = process.platform === "win32";
+    const llamafileCmd = isWindows ? ".\\llamafile.exe" : "./llamafile";
+    
+    const command = `${llamafileCmd} -m tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf --nobrowser --port ${port}`;
+    console.log(`Executing: ${command}`);
+    
+    const child = exec(command, { shell: true });
+    
+    child.stdout.on("data", (data) => {
+      console.log(`🟢 AI Server Output: ${data}`);
     });
-
-    processInstance.stderr.on("data", (data) => {
-      console.error(`Llama Error: ${data}`);
+    
+    child.stderr.on("data", (data) => {
+      console.error(`🔴 AI Server Error: ${data}`);
     });
-
-    await waitForServer(`http://localhost:${port}`);
-
-    console.log(`✅ Llama server started successfully on port ${port}`);
+    
+    child.on("exit", (code) => {
+      console.log(`❌ AI Server process exited with code ${code}`);
+    });
+    
   } catch (error) {
-    console.error("❌ Setup error:", error);
+    console.error("Setup error:", error);
     throw error;
   }
 }
 
-module.exports = { setupModel, killPreviousLlama };
+function checkIfPortInUse(port) {
+  const net = require('net');
+  
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.unref();
+    server.on('error', () => resolve(false));
+    server.listen(port, () => resolve(true));
+  });
+}
+
 
 // ✅ Function to wait for AI server readiness
 async function waitForServer(url, retries = 5, delayMs = 2000) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       await axios.get(url);
-      console.log(`AI server ready at ${url}`);
+      console.log(`AI server is ready at ${url}`);
       return;
-    } catch {
+    } catch (error) {
+      console.error(`Attempt ${attempt} failed:`, error.message);
       if (attempt < retries) {
         console.log(`Retrying (${attempt}/${retries})...`);
         await new Promise((resolve) => setTimeout(resolve, delayMs));
       } else {
-        throw new Error("AI server failed to start");
+        throw new Error(`AI server failed to start after ${retries} attempts. Last error: ${error.message}`);
       }
     }
   }
 }
 
-const nThreadsDefault = Math.min(8, os.cpus().length);
 
-const analytics = {
-  requestCount: 0,
-  errorCount: 0,
-  executionTimes: [],
-  taskStats: {}, 
-  minExecutionTime: null,
-  maxExecutionTime: null,
-  sentimentCounts: { positive: 0, negative: 0, neutral: 0 },
-};
+
+const nThreadsDefault = Math.max(1, os.cpus().length - 1);
 
 async function executeLlama(options = {}) {
-  try {
-    if (!options || typeof options !== "object") {
-      throw new Error("Invalid options object");
-    }
+  const {
+    prompt,
+    model = "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+    task = "default",
+    socket = null,
+    maxTokens = 256,
+    temperature = 0.7,
+    topK = 50,
+    
+    nThreads = Math.max(2, os.cpus().length - 1), // Optimize thread allocation
+  } = options;
 
-    const {
-      prompt,
-      model = "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
-      task = "default",
-      socket = null,
-      maxTokens = 128,
-      temperature = 0.6,
-      topK = 100,
-      topP = 0.9,
-      nThreads = nThreadsDefault,
-      stream = false,
-    } = options;
-
-    if (!prompt || typeof prompt !== "string" || prompt.trim() === "") {
-      return Promise.reject({ message: "Invalid prompt", details: "Prompt must be a non-empty string." });
-    }
-
-    // Check cache first
-    const cacheKey = crypto.createHash("sha256").update(JSON.stringify(options)).digest("hex");
-    if (cache.has(cacheKey)) {
-      console.log("⚡ Returning cached response");
-      return cache.get(cacheKey);
-    }
-
-    const startTime = Date.now();
-    const response = await runLlamaModel({ prompt, model, socket, maxTokens, temperature, topK, topP, nThreads, stream });
-    const executionTime = Date.now() - startTime;
-
-    // Update analytics
-    analytics.requestCount++;
-    analytics.executionTimes.push(executionTime);
-    analytics.taskStats[task] = (analytics.taskStats[task] || 0) + 1;
-    analytics.minExecutionTime = analytics.minExecutionTime !== null ? Math.min(analytics.minExecutionTime, executionTime) : executionTime;
-    analytics.maxExecutionTime = analytics.maxExecutionTime !== null ? Math.max(analytics.maxExecutionTime, executionTime) : executionTime;
-
-    // Cache response
-    cache.set(cacheKey, response);
-
-    console.log(`✅ Completed in ${executionTime}ms | Task: ${task} | Total Requests: ${analytics.requestCount}`);
-    return response;
-  } catch (error) {
-    analytics.errorCount++;
-    console.error("❌ Execution error:", error.message || error);
-    return Promise.reject({ message: "Execution failed", details: error.message });
+  if (!prompt || typeof prompt !== "string" || prompt.trim() === "") {
+    console.error("❌ Invalid prompt received:", prompt);
+    return Promise.reject({ message: "❌ Invalid prompt", details: "Prompt must be a non-empty string." });
   }
+
+  console.log(`📝 Running Llama with prompt: "${prompt}" using ${nThreads} threads`);
+
+  return runLlamaModel({ prompt, model, socket, maxTokens, temperature, topK, nThreads });
 }
 
-// Centralized Error Handling
-const handleError = (res, message, error) => {
-  console.error(`❌ ${message}:`, error);
-  res.status(500).json({ error: message, details: error.message || error });
-};
 
-// Generic AI Request Handler with Analytics Tracking
-const handleAIRequest = async (req, res, task, promptTemplate) => {
-  try {
-    const startTime = Date.now();
-    const prompt = promptTemplate(req.body);
-
-    if (!prompt || typeof prompt !== "string" || prompt.trim() === "") {
-      return res.status(400).json({ error: "Invalid prompt", details: "Prompt must be a non-empty string." });
-    }
-
-    console.log(`🔄 Processing AI task: ${task} | Prompt: "${prompt}"`);
-
-    const response = await executeLlama({ prompt, task });
-
-    if (!response || !response.response || response.response.trim() === "") {
-      analytics.errorCount++;
-      return res.status(500).json({ error: "AI response is empty", details: response });
-    }
-
-    const executionTime = Date.now() - startTime;
-
-    // Update analytics data
-    analytics.requestCount++;
-    analytics.executionTimes.push(executionTime);
-    analytics.taskStats[task] = (analytics.taskStats[task] || 0) + 1;
-    analytics.minExecutionTime = Math.min(analytics.minExecutionTime ?? executionTime, executionTime);
-    analytics.maxExecutionTime = Math.max(analytics.maxExecutionTime ?? executionTime, executionTime);
-
-    res.json({ status: "success", response: response.response.trim(), executionTime });
-  } catch (error) {
-    analytics.errorCount++;
-    handleError(res, `${task} failed`, error);
-  }
-};  
-// AI Task Handler
-const handleAITask = async (req, res, prompt, task, options = {}) => {
-  try {
-    if (!prompt || typeof prompt !== "string" || prompt.trim() === "") {
-      return res.status(400).json({ error: "Invalid prompt", details: "Prompt must be a non-empty string." });
-    }
-
-    console.log(`🔄 Processing AI task: ${task} with prompt: "${prompt}"`);
-
-    const startTime = Date.now();
-    const response = await executeLlama({ prompt, task, ...options });
-
-    // Handle missing or empty response
-    if (!response || !response.response || typeof response.response !== "string" || response.response.trim() === "") {
-      console.error("❌ AI model returned an empty or invalid response.");
-      return res.status(500).json({ error: "AI model returned an invalid response" });
-    }
-
-    console.log(`✅ AI task '${task}' completed in ${Date.now() - startTime}ms`);
-    
-    return res.json({ status: "success", response: response.response.trim() });
-
-  } catch (error) {
-    console.error(`❌ AI task '${task}' failed:`, error);
-    return res.status(500).json({ error: `${task} failed`, details: error.message });
-  }
-};
-// Get AI Analytics with Filtering
-const getAnalytics = async (req, res) => {
-  try {
-    const { task, startTime, endTime } = req.query;
-    let filteredRequests = analytics.executionTimes.map((time, index) => ({
-      task: Object.keys(analytics.taskStats)[index] || "unknown",
-      executionTime: time,
-      timestamp: Date.now() - time, // Approximation
-    }));
-
-    if (task) {
-      filteredRequests = filteredRequests.filter((entry) => entry.task === task);
-    }
-
-    if (startTime || endTime) {
-      const start = startTime ? new Date(startTime).getTime() : 0;
-      const end = endTime ? new Date(endTime).getTime() : Date.now();
-      filteredRequests = filteredRequests.filter((entry) => entry.timestamp >= start && entry.timestamp <= end);
-    }
-
-    const executionTimes = filteredRequests.map((entry) => entry.executionTime);
-    const totalRequests = executionTimes.length;
-    const totalErrors = analytics.errorCount;
-    const avgExecutionTime = totalRequests
-      ? executionTimes.reduce((a, b) => a + b, 0) / totalRequests
-      : 0;
-
-    const minExecutionTime = executionTimes.length ? Math.min(...executionTimes) : null;
-    const maxExecutionTime = executionTimes.length ? Math.max(...executionTimes) : null;
-    const variance =
-      executionTimes.length > 1
-        ? executionTimes.reduce((sum, val) => sum + Math.pow(val - avgExecutionTime, 2), 0) / executionTimes.length
-        : 0;
-
-    const stdDeviation = Math.sqrt(variance);
-
-    res.json({
-      totalRequests,
-      totalErrors,
-      avgExecutionTime: avgExecutionTime.toFixed(2),
-      minExecutionTime,
-      maxExecutionTime,
-      stdDeviation: stdDeviation.toFixed(2),
-      taskStats: analytics.taskStats,
-    });
-  } catch (error) {
-    res.status(500).json({ error: "Failed to fetch analytics", details: error.message });
-  }
-};
-
-module.exports = { handleAIRequest, getAnalytics };
-
-async function runLlamaModel({
-  prompt,
-  model,
-  socket,
-  maxTokens = 128,
-  temperature = 0.6,
-  topK = 100,
-  nThreads = 8,
-  port = PORT,
-  retryAttempts = 3, // 🔄 Retry feature
-}) {
+async function runLlamaModel({ prompt, model, socket, maxTokens, temperature, topK, nThreads, port = PORT }) { 
   return new Promise(async (resolve, reject) => {
-    console.log("📝 Running Llama with:", { port, prompt, maxTokens, temperature, topK, nThreads });
+      console.log("📝 Running Llama with:", { AI_SERVER_PORT, prompt, maxTokens, temperature, topK, nThreads });
 
-    if (!port) {
-      return reject({ message: "❌ Port is missing!" });
-    }
-
-    let attempt = 0;
-    let lastError = null;
-    let startTime = Date.now(); // ⏳ Start execution time tracking
-
-    while (attempt < retryAttempts) {
-      attempt++;
-      console.log(`🔄 Attempt ${attempt} of ${retryAttempts}...`);
-
-      const isServerReady = await checkServerAvailability(port);
-      if (!isServerReady) {
-        lastError = "❌ Llama server is not available";
-        continue; // Retry
+      if (!port) {
+          return reject({ message: "❌ Port is missing!" });
       }
 
+      const isServerReady = await checkServerAvailability(AI_SERVER_PORT);
+      if (!isServerReady) {
+          return reject({ message: "❌ Llama server is not available" });
+      }
+
+      const llamaSystemPrompt =
+          `You are an AI assistant here to help with programming tasks. ` +
+          `Your responses will be clear, concise, and code-oriented. ` +
+          `Please follow the instructions and generate the requested code.`;
+
       const api = llamacpp.Api({
-        baseUrl: `http://localhost:${port}`,
+          baseUrl: `http://localhost:${AI_SERVER_PORT}`, // ✅ Fixed port usage
       });
 
       try {
-        const timeout = 5000;
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeout);
+          const timeout = 5000;
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-        const textStream = await streamText({
-          signal: controller.signal,
-          model: llamacpp
-            .CompletionTextGenerator({
-              api: api,
-              temperature: temperature,
-              stopSequences: ["\n```"],
-            })
-            .withInstructionPrompt(),
-          prompt: {
-            system: "You are an AI assistant helping with programming tasks. Be concise and clear.",
-            instruction: prompt,
-            responsePrefix: `Here is the response:\n`,
-          },
-        });
+          const textStream = await streamText({
+              signal: controller.signal,
+              model: llamacpp
+                  .CompletionTextGenerator({
+                      api: api,
+                      temperature: temperature,
+                      stopSequences: ["\n```"],
+                  })
+                  .withInstructionPrompt(),
+              prompt: {
+                  system: llamaSystemPrompt,
+                  instruction: prompt,
+                  responsePrefix: `Here is the response:\n`,
+              },
+          });
 
-        let response = "";
-        for await (const textPart of textStream) {
-          process.stdout.write(textPart);
-          response += textPart;
-          if (socket) socket.emit("ai_response", { chunk: textPart });
-        }
+          let response = "";
+          for await (const textPart of textStream) {
+              process.stdout.write(textPart);
+              response += textPart;
+              if (socket) socket.emit("ai_response", { chunk: textPart });
+          }
 
-        clearTimeout(timeoutId);
-
-        // 🔥 Fix: Ensure aiResponse is a string before trimming
-        response = typeof response === "string" ? response.trim() : JSON.stringify(response);
-
-        if (!response) {
-          lastError = "❌ AI response is empty";
-          continue; // Retry if response is empty
-        }
-
-        console.log("✅ AI Response Generated Successfully");
-
-        return resolve({
-          status: "success",
-          message: "Response generated successfully",
-          response,
-          executionTime: Date.now() - startTime, // ⏳ Track execution time
-        });
+          clearTimeout(timeoutId);
+          resolve({
+              status: "success",
+              message: "Response generated successfully",
+              response: response.trim(),
+          });
       } catch (error) {
-        lastError = error.message;
-        console.error("❌ Error generating response:", error.message);
+          console.error("❌ Error generating response:", error.message);
+          reject({ message: "Llama Execution Failed", details: error.message });
       }
-    }
-
-    // If all attempts fail, return last error
-    reject({ message: "Llama Execution Failed", details: lastError });
   });
 }
 
-async function generateImage(prompt, outputPath) {
-  try {
-    if (!prompt || typeof prompt !== "string" || prompt.trim() === "") {
-      console.error("❌ Invalid prompt provided.");
-      return false;
-    }
 
-    console.log(`🎨 Generating image with prompt: "${prompt}"`);
-    
-    analytics.requestCount++;
-    const startTime = Date.now();
-
-    // Call the AI model using executeLlama
-    const response = await executeLlama({ prompt, task: "image-generation" });
-
-    if (!response || !response.imageData) {
-      console.error("❌ AI model did not return valid image data.");
-      analytics.errorCount++;
-      return false;
-    }
-
-    // Convert base64 image data to a buffer
-    const imageBuffer = Buffer.from(response.imageData, "base64");
-
-    // Save image asynchronously
-    await fs.writeFile(outputPath, imageBuffer);
-    
-    const executionTime = Date.now() - startTime;
-    analytics.executionTimes.push(executionTime);
-
-    console.log(`✅ Image successfully generated in ${executionTime}ms and saved to: ${outputPath}`);
-    
-    return true;
-  } catch (error) {
-    analytics.errorCount++;
-    console.error("❌ Image generation failed:", error);
-    return false;
-  }
-}
 // Check if the server is available
 async function checkServerAvailability(port) {
-    console.log("🔍 Checking server availability on port:", port);
+  console.log("🔍 Checking server availability on port:", port);
 
-    if (!port) {
-        console.error("❌ Port is undefined or invalid");
-        return false;
-    }
+  if (!port) {
+      console.error("❌ Port is undefined or invalid");
+      return false;
+  }
 
-    const serverUrl = `http://localhost:${port}`;
-    try {
-        await axios.get(serverUrl);
-        console.log(`✅ AI server is ready at ${serverUrl}`);
-        return true;
-    } catch (error) {
-        console.error(`❌ Server is unavailable at ${serverUrl}`);
-        return false;
-    }
+  const serverUrl = `http://localhost:${port}`;
+  try {
+      await axios.get(serverUrl);
+      console.log(`✅ AI server is ready at ${serverUrl}`);
+      return true;
+  } catch (error) {
+      console.error(`❌ Server is unavailable at ${serverUrl}`);
+      // Optionally log the specific error message if needed
+      console.error("Error details:", error.message);
+      return false;
+  }
 }
+let analytics = {}
 
 // Check server health
 async function checkServerHealth() {
@@ -1123,13 +921,9 @@ async function checkServerHealth() {
     } 
 }
 
-
-// Start checking server availability
-checkServerAvailability(PORT);
-
 module.exports = { runLlamaModel, checkServerAvailability, checkServerHealth };
 
-
+ 
 // ✅ Middleware for request validation
 const validateRequest = (fields) => (req, res, next) => {
   const missingFields = fields.filter((field) => !req.body[field]);
@@ -1159,7 +953,23 @@ async function handleLlamaRequest(req, res, responseFunction) {
     res.status(500).json({ error: 'An error occurred while processing the request', details: error.message });
   }
 }
-
+const handleAIRequest = async (req, res, task, promptTemplate) => {
+  try {
+    const prompt = promptTemplate(req.body);
+    const response = await executeLlama({ prompt, task });
+    if (!response || !response.response || response.response.trim() === "") {
+      return res.status(500).json({ error: "AI response is empty", details: response });
+    }
+    res.json({ status: "success", response: response.response.trim() });
+  } catch (error) {
+    handleError(res, error, `${task} failed`);
+  }
+};
+  
+const handleError = (res, message, error) => {
+  console.error(`❌ ${message}:`, error);
+  res.status(500).json({ error: message, details: error.message || error });
+};
 // Middleware for logging request details
 app.use((req, res, next) => {
   const startTime = Date.now();
@@ -2642,7 +2452,6 @@ app.post("/api/analytics/revenue-forecast", logRequest, validateRequest(["histor
     res.status(500).json({ error: error.message || "Internal Server Error" });
   }
 });
-
 
 // Ensure Express JSON middleware is enabled
 app.use(express.json());

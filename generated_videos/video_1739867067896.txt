@@ -1,0 +1,5 @@
+Title: A Dog Running in a Field
+
+Introduction (1-2 sentences): Welcome to our video tutorial on "A dog running in a field." In this instructional video, we will guide you through the process of creating a simple and visually appealing animation. We'll cover everything from setting up your project, importing assets, and creating basic shapes and animations.
+
+Key Points (3-4 sentences): 1. Importing assets: You can import images, videos, or any other media files using the "Import Asset" button in ...
