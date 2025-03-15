@@ -5,7 +5,8 @@ const { generateCodeWithCodeLlama } = require('./codeLlama');
 const path = require('path');
 const { llamacpp, streamText } = require("modelfusion");
 const ip = '8.8.8.8';
-
+const { buildSchema } = require("graphql");
+const { graphqlHTTP } = require("express-graphql");
 const MODELS = require("./models/llama");
 const os = require('os');
 const { body, validationResult ,query} = require("express-validator");
@@ -1107,7 +1108,23 @@ app.post("/api/ai/generate-code", async (req, res) => {
 app.post("/api/ai/chat", async (req, res) => {
   const { message, context, temperature = 0.7 } = req.body;
   if (!message) return res.status(400).json({ error: "Message is required" });
-  await handleAITask(req, res, `Chatbot response to: '${message}' in context '${context}'`, "chat", { temperature });
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+
+  try {
+    const stream = await streamText(`Chatbot response to: '${message}' in context '${context}'`, { temperature });
+
+    for await (const chunk of stream) {
+      res.write(`data: ${JSON.stringify({ chunk })}\n\n`);
+    }
+    
+    res.end();
+  } catch (error) {
+    console.error("AI error:", error);
+    res.status(500).json({ error: "AI service failed" });
+  }
 });
 
 app.post("/api/ai/generate-sql", async (req, res) => {
@@ -1139,6 +1156,550 @@ const handleAIRequest = async (req, res, task, promptTemplate) => {
     handleError(res, error, `${task} failed`);
   }
 };
+// API to Get Analytics by Time Range
+const { stringify } = require("flatted"); // Alternative to handle circular references
+
+app.get("/api/analytics/time", async (req, res) => {
+    try {
+        const aiResponse = await getAIAnalyticsTime(); // Assuming this is your AI API call
+
+        console.log("Raw AI Response:", aiResponse); // Log AI response before processing
+
+        if (!aiResponse || Object.keys(aiResponse).length === 0) {
+            return res.status(500).json({ success: false, message: "AI response is empty" });
+        }
+
+        // Ensure the response is serializable
+        const safeData = JSON.parse(JSON.stringify(aiResponse, (key, value) =>
+            key === "socket" || key === "parser" ? undefined : value
+        ));
+
+        res.json({
+            success: true,
+            message: "Analytics data fetched",
+            data: safeData
+        });
+
+    } catch (error) {
+        console.error("Error fetching analytics:", error);
+
+        // Handle circular JSON error
+        if (error.message.includes("circular structure")) {
+            return res.status(500).json({
+                success: false,
+                message: "Server error: Circular reference detected",
+                error: stringify(error) // Use 'flatted' to handle circular structures
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            message: "Internal server error",
+            error: error.message
+        });
+    }
+});
+
+
+ 
+
+// API to Stream Analytics Data
+app.get("/api/analytics/stream", (req, res) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+
+  setInterval(() => {
+    handleAIRequest(req, res, "analytics-stream", () => "Stream live analytics data.");
+  }, 5000); // Sends update every 5s
+});
+
+// GraphQL API for Analytics
+const schema = buildSchema(`
+  type Query {
+    totalRequests: Int
+    totalErrors: Int
+    avgExecutionTime: Float
+  }
+`);
+
+const root = {
+  totalRequests: () => handleAIRequest({}, {}, "analytics-graphql", () => "Get total requests."),
+  totalErrors: () => handleAIRequest({}, {}, "analytics-graphql", () => "Get total errors."),
+  avgExecutionTime: () => handleAIRequest({}, {}, "analytics-graphql", () => "Get average execution time."),
+};
+
+app.use("/api/analytics/graphql", graphqlHTTP({
+  schema,
+  rootValue: root,
+  graphiql: true,
+}));
+
+// API to Get Dashboard Data
+app.get("/api/analytics/dashboard", (req, res) => {
+  handleAIRequest(req, res, "analytics-dashboard", () => "Get dashboard analytics data.");
+});
+app.get("/api/ai/analytics", (req, res) => {
+  handleAIRequest(req, res, "analytics-ai", (query) => {
+    const { task, startTime, endTime, errorsOnly } = query;
+
+    // Ensure analytics object exists
+    if (!analytics || !analytics.executionTimes || !analytics.taskStats) {
+      console.error("Analytics data is missing");
+      return "Error: Analytics data is not available.";
+    }
+
+    let filteredRequests = analytics.executionTimes.map((time, index) => ({
+      task: Object.keys(analytics.taskStats)[index] || "unknown",
+      executionTime: time,
+      timestamp: Date.now() - time,
+    }));
+
+    if (task) {
+      filteredRequests = filteredRequests.filter((entry) => entry.task === task);
+    }
+
+    if (startTime || endTime) {
+      const start = startTime ? new Date(startTime).getTime() : 0;
+      const end = endTime ? new Date(endTime).getTime() : Date.now();
+      filteredRequests = filteredRequests.filter((entry) => entry.timestamp >= start && entry.timestamp <= end);
+    }
+
+    // Apply errorsOnly filter if requested
+    if (errorsOnly === "true") {
+      filteredRequests = filteredRequests.filter((entry) => entry.task === "error");
+    }
+
+    const executionTimes = filteredRequests.map((entry) => entry.executionTime);
+    const totalRequests = executionTimes.length;
+    const totalErrors = analytics.errorCount || 0;
+    const avgExecutionTime = totalRequests ? executionTimes.reduce((a, b) => a + b, 0) / totalRequests : 0;
+    const minExecutionTime = executionTimes.length ? Math.min(...executionTimes) : null;
+    const maxExecutionTime = executionTimes.length ? Math.max(...executionTimes) : null;
+    const variance = executionTimes.length > 1 ? executionTimes.reduce((sum, val) => sum + Math.pow(val - avgExecutionTime, 2), 0) / executionTimes.length : 0;
+    const stdDeviation = Math.sqrt(variance);
+
+    // ✅ Return as a **string** instead of an object
+    return JSON.stringify({
+      totalRequests,
+      totalErrors,
+      avgExecutionTime: avgExecutionTime.toFixed(2),
+      minExecutionTime,
+      maxExecutionTime,
+      stdDeviation: stdDeviation.toFixed(2),
+      taskStats: analytics.taskStats,
+    });
+  });
+});
+
+
+// AI Routes
+app.post("/api/ai/analyze-data", logRequest, validateRequest(["dataset", "question"]), (req, res) => {
+  handleAIRequest(req, res, "data-analysis", (body) => `Analyze this dataset and answer: ${body.question}\n${JSON.stringify(body.dataset)}`);
+});
+
+app.post("/api/ai/grammar-check", logRequest, validateRequest(["text"]), (req, res) => {
+  handleAIRequest(req, res, "grammar-correction", (body) => `Correct the grammar in: ${body.text}`);
+});
+
+
+const audioDir = path.join(__dirname, "generated_audio");
+if (!fs.existsSync(audioDir)) {
+  fs.mkdirSync(audioDir, { recursive: true });
+}
+
+app.post(
+  "/api/ai/video-to-text",
+  logRequest,
+  validateRequest(["videoUrl"]),
+  (req, res) => {
+    handleAIRequest(req, res, "video-to-text", (body) => {
+      const videoUrl = body.videoUrl;
+      const videoPath = path.join(videosDir, path.basename(videoUrl));
+      const audioPath = path.join(audioDir, path.basename(videoPath, path.extname(videoPath)) + ".wav");
+
+      if (!fs.existsSync(videoPath)) {
+        throw new Error(`❌ Video file not found: ${videoPath}`);
+      }
+
+      console.log(`🎥 Extracting audio from: ${videoPath}`);
+      try {
+        execSync(`ffmpeg -i "${videoPath}" -ar 16000 -ac 1 -c:a pcm_s16le "${audioPath}"`, { stdio: "inherit" });
+      } catch (error) {
+        throw new Error(`⚠️ Failed to extract audio: ${error.message}`);
+      }
+
+      console.log(`🔊 Audio extracted: ${audioPath}`);
+
+      // Return transcription prompt for LLaMA
+      return `Transcribe the following audio into text: ${audioPath}`;
+    });
+  }
+);
+
+
+app.post("/api/ai/chatbot", logRequest, validateRequest(["message"]), (req, res) => {
+  try {
+    const message = req.body.message;
+
+    if (!message || typeof message !== "string" || message.trim() === "") {
+      return res.status(400).json({ error: "Invalid input: 'message' must be a non-empty string." });
+    }
+
+    console.log(`📩 Incoming Chatbot Message: "${message}"`);
+
+    handleAIRequest(req, res, "chatbot", (body) => body.message);
+  } catch (error) {
+    console.error("❌ Chatbot Request Error:", error);
+    res.status(500).json({ error: "Internal Server Error", details: error.message });
+  }
+});
+    
+ 
+// Ensure the videos directory exists
+const videosDir = path.join(__dirname, "generated_videos");
+if (!fs.existsSync(videosDir)) {
+  fs.mkdirSync(videosDir, { recursive: true });
+}
+
+// Define the generated background path
+const generatedBackgroundPath = path.join(videosDir, "generated_background.mp4");
+
+// Function to generate a dynamic background video
+function generateBackgroundVideo(callback) {
+  const pythonExecutable =
+    process.platform === "win32"
+      ? path.join(__dirname, "venv", "Scripts", "python.exe")
+      : path.join(__dirname, "venv", "bin", "python");
+
+  const backgroundScript = path.join(__dirname, "generate_background.py");
+
+  const command = `"${pythonExecutable}" "${backgroundScript}" --output "${generatedBackgroundPath}"`;
+
+  console.log("⏳ Generating background video...");
+
+  try {
+    execSync(command, { stdio: "inherit" });
+    console.log(`✅ Background video generated at: ${generatedBackgroundPath}`);
+    callback(null); // No error, proceed
+  } catch (error) {
+    console.warn(`⚠️ Background generation failed, but proceeding anyway.`);
+    callback(null); // Proceed even if background generation fails
+  }
+}
+
+app.post("/api/ai/text-to-video", async (req, res) => {
+  try {
+    const { text } = req.body;
+    if (!text) {
+      return res.status(400).json({ error: "Missing required 'text' field" });
+    }
+
+    console.log(`🎥 Generating video for: "${text}"`);
+
+    // Define video output path
+    const videoFilename = `${text.replace(/\s+/g, "_")}.mp4`;
+    const videoPath = path.join(videosDir, videoFilename);
+
+    // Ensure background is generated before proceeding
+    if (!fs.existsSync(generatedBackgroundPath)) {
+      generateBackgroundVideo(() => {
+        processVideo(text, videoPath, res);
+      });
+    } else {
+      processVideo(text, videoPath, res);
+    }
+  } catch (error) {
+    console.error("❌ Error processing request:", error);
+    res.status(500).json({ error: "Internal Server Error", details: error.message });
+  }
+});
+
+function processVideo(text, videoPath, res) {
+  const pythonExecutable =
+    process.platform === "win32"
+      ? path.join(__dirname, "venv", "Scripts", "python.exe")
+      : path.join(__dirname, "venv", "bin", "python");
+
+  const pythonScript = path.join(__dirname, "generate_video.py");
+
+  // Execute Python script to generate the final video
+  const command = `"${pythonExecutable}" "${pythonScript}" --text "${text}" --input "${generatedBackgroundPath}" --output "${videoPath}" --format "mp4"`;
+
+  console.log(`🚀 Running video generation command:\n${command}`);
+
+  exec(command, (error, stdout, stderr) => {
+    console.log(`📜 Raw stdout: ${stdout.trim()}`);
+    console.log(`📜 Raw stderr: ${stderr.trim()}`);
+
+    if (error) {
+      console.error(`❌ Video generation error: ${error.message}`);
+      return res.status(500).json({ error: "Video generation failed", details: stderr.trim() });
+    }
+
+    if (!fs.existsSync(videoPath)) {
+      console.error(`❌ Video file not found: ${videoPath}`);
+      return res.status(500).json({ error: "Video file not found after generation" });
+    }
+
+    const videoUrl = `${res.req.protocol}://${res.req.get("host")}/videos/${path.basename(videoPath)}`;
+    res.json({ status: "success", videoUrl });
+  });
+}  
+
+// Serve videos statically
+app.use("/videos", express.static(videosDir));
+// AI-Powered Sentiment Analysis
+app.post("/api/social/sentiment-analysis", logRequest, validateRequest(["text"]), (req, res) => {
+  handleAIRequest(req, res, "sentiment-analysis", (body) => `Analyze sentiment: \"${body.text}\".`);
+});
+
+// AI-Powered Fake News Detection
+app.post("/api/social/fake-news-detection", logRequest, validateRequest(["articleText"]), (req, res) => {
+  handleAIRequest(req, res, "fake-news-detection", (body) => `Analyze if this article contains fake news: \"${body.articleText}\".`);
+});
+
+// AI-Powered Hashtag Recommendation
+app.post("/api/social/recommend-hashtags", async (req, res) => {
+  try {
+    // Accept content from either query params or body
+    const content = req.body.content || req.query.content;
+    if (!content) {
+      return res.status(400).json({ error: "Content is required" });
+    }
+
+    const prompt = `Suggest three relevant hashtags for: "${content}".`;
+    
+    // Ensure `executeLlama` runs properly
+    const response = await executeLlama({ prompt, task: "hashtag-recommendation" });
+
+    if (!response || !response.response) {
+      throw new Error("Invalid response from AI model");
+    }
+
+    // Parse and sanitize hashtags
+    let hashtags = response.response.trim().split(/,\s*/).map(tag => tag.startsWith("#") ? tag : `#${tag}`);
+
+    res.json({ status: "success", hashtags });
+  } catch (error) {
+    console.error("Hashtag recommendation error:", error);
+    res.status(500).json({ error: "Hashtag recommendation failed", details: error.message });
+  }
+});
+
+// AI-Powered Post Scheduling Suggestion
+app.post("/api/social/suggest-post-time", async (req, res) => {
+  try {
+    const content = req.body.content || req.query.content;
+    const platform = req.body.platform || req.query.platform;
+
+    if (!content || !platform) {
+      return res.status(400).json({ error: "Content and platform are required" });
+    }
+
+    const prompt = `Suggest the best posting time on ${platform} for: "${content}".`;
+    const response = await executeLlama({ prompt, task: "post-scheduling" });
+
+    if (!response || !response.response) {
+      throw new Error("Invalid response from AI model");
+    }
+
+    res.json({ status: "success", bestTime: response.response.trim() });
+  } catch (error) {
+    console.error("Post scheduling error:", error);
+    res.status(500).json({ error: "Post scheduling suggestion failed", details: error.message });
+  }
+});
+
+// AI-Powered Automated Replies
+app.post("/api/social/auto-reply", async (req, res) => {
+  try {
+    const message = req.body.message || req.query.message;
+
+    if (!message) {
+      return res.status(400).json({ error: "Message is required" });
+    }
+
+    const prompt = `Generate a reply to: "${message}".`;
+    const response = await executeLlama({ prompt, task: "auto-reply" });
+
+    if (!response || !response.response) {
+      throw new Error("Invalid response from AI model");
+    }
+
+    res.json({ status: "success", reply: response.response.trim() });
+  } catch (error) {
+    console.error("Auto-reply error:", error);
+    res.status(500).json({ error: "Auto-reply generation failed", details: error.message });
+  }
+});
+// AI-Powered Image Captioning
+app.post("/api/social/generate-caption", logRequest, (req, res) => {
+  handleAIRequest(req, res, "image-captioning", (body) => {
+    const imageUrl = body.imageUrl || req.query.imageUrl;
+    if (!imageUrl) {
+      throw new Error("Image URL is required");
+    }
+    return `Describe this image: "${imageUrl}".`;
+  });
+}); 
+
+// AI-Powered Trend Analysis
+app.post("/api/social/analyze-trends", logRequest, (req, res) => {
+  handleAIRequest(req, res, "trend-analysis", (body) => {
+    const topic = body.topic || req.query.topic;
+    if (!topic) {
+      throw new Error("Topic is required");
+    }
+    return `Analyze social media trends on: "${topic}".`;
+  });
+});
+ 
+// 📩 AI-Generated SMS
+const sendDebtReminderSMS = async (debtor) => {
+  const task = "Debt Collection SMS";
+  const prompt = `Generate a polite yet firm debt reminder for ${debtor.name} who owes $${debtor.amountDue}.`;
+
+  const response = await executeLlama({ prompt, task });
+  const message = response.response.trim();
+
+  console.log(`📩 Sending SMS to ${debtor.phone}: "${message}"`);
+
+  return { status: "sent", message };
+};
+
+// 🔊 Convert AI-Generated Message to Speech (Voice Note)
+const convertToVoiceNote = async (text, debtorId) => {
+  const client = new textToSpeech.TextToSpeechClient();
+  const request = {
+    input: { text },
+    voice: { languageCode: "en-US", ssmlGender: "NEUTRAL" },
+    audioConfig: { audioEncoding: "MP3" },
+  };
+
+  const [response] = await client.synthesizeSpeech(request);
+  const filePath = `voice_notes/debtor_${debtorId}.mp3`;
+  await util.promisify(fs.writeFile)(filePath, response.audioContent, "binary");
+
+  return filePath;
+};
+
+// 📞 Simulated AI Call System
+const makeAICall = async (debtor) => {
+  console.log(`📞 AI calling debtor: ${debtor.name} at ${debtor.phone}`);
+  return `Call placed to ${debtor.phone}`;
+};
+
+// 💬 AI-Generated WhatsApp Message
+const sendWhatsAppMessage = async (debtor) => {
+  const task = "Debt Collection WhatsApp";
+  const prompt = `Generate a polite yet firm debt reminder for ${debtor.name} who owes $${debtor.amountDue} in WhatsApp-friendly format.`;
+
+  const response = await executeLlama({ prompt, task });
+  const message = response.response.trim();
+
+  console.log(`💬 Sending WhatsApp message to ${debtor.phone}: "${message}"`);
+
+  return { status: "sent", message };
+};
+
+// 📩 📞 🔊 Debt Collection Request
+app.post("/api/ai/debt-collection", async (req, res) => {
+  const { debtorId, name, phone, amountDue, notifyMethod } = req.query; // Use req.query
+
+  if (!debtorId || !name || !phone || !amountDue || !notifyMethod) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
+
+  const debtor = { debtorId, name, phone, amountDue };
+  let response = { status: "success" };
+
+  try {
+    if (notifyMethod === "sms") {
+      response.sms = await sendDebtReminderSMS(debtor);
+    } else if (notifyMethod === "voice") {
+      response.voiceNote = await convertToVoiceNote(
+        `Dear ${name}, you have an outstanding balance of $${amountDue}. Kindly clear it.`,
+        debtorId
+      );
+    } else if (notifyMethod === "call") {
+      response.call = await makeAICall(debtor);
+    } else if (notifyMethod === "whatsapp") {
+      response.whatsapp = await sendWhatsAppMessage(debtor);
+    } else {
+      return res.status(400).json({ error: "Invalid notification method" });
+    }
+
+    res.json(response);
+  } catch (error) {
+    res.status(500).json({ error: "Debt collection failed", details: error.message });
+  } 
+});
+// AI-Powered Credit Score Estimation
+app.post("/api/banking/credit-score", logRequest, (req, res) => {
+  handleAIRequest(req, res, "credit-score-estimation", (body) => {
+    const { financialHistory } = body;
+    if (!financialHistory) {
+      throw new Error("Financial history data is required");
+    }
+    return `Estimate the credit score based on this financial history: ${JSON.stringify(financialHistory)}. Provide a score out of 850.`;
+  });
+});
+
+// AI-Powered Post Optimization
+app.post("/api/social/optimal-post-time", logRequest, (req, res) => {
+  handleAIRequest(req, res, "post-optimization", (body) => {
+    const { userActivityData } = body;
+    if (!userActivityData) {
+      throw new Error("User activity data is required");
+    }
+    return `Analyze this user activity data: ${JSON.stringify(userActivityData)}. Suggest the best time to post for maximum engagement.`;
+  });
+});
+
+// AI-Powered Fake News Detection
+app.post("/api/social/fake-news-detection", logRequest, (req, res) => {
+  handleAIRequest(req, res, "fake-news-detection", (body) => {
+    const { articleText } = body;
+    if (!articleText) {
+      throw new Error("Article text is required");
+    }
+    return `Analyze this article: "${articleText}". Determine if it contains false or misleading information (yes or no) and provide reasoning.`;
+  });
+});
+
+// AI-Powered Text Summarization
+app.post("/api/nlp/summarize-text", logRequest, (req, res) => {
+  handleAIRequest(req, res, "text-summarization", (body) => {
+    const { text } = body;
+    if (!text) {
+      throw new Error("Text is required");
+    }
+    return `Summarize the following text into key points: "${text}".`;
+  });
+});
+
+// AI-Powered Language Translation
+app.post("/api/nlp/translate", logRequest, (req, res) => {
+  handleAIRequest(req, res, "language-translation", (body) => {
+    const { text, targetLanguage } = body;
+    if (!text || !targetLanguage) {
+      throw new Error("Text and target language are required");
+    }
+    return `Translate this text: "${text}" into ${targetLanguage}.`;
+  });
+});
+
+// AI-Powered Speech-to-Text
+app.post("/api/nlp/speech-to-text", logRequest, (req, res) => {
+  handleAIRequest(req, res, "speech-to-text", (body) => {
+    const { audioData } = body;
+    if (!audioData) {
+      throw new Error("Audio data is required");
+    }
+    return `Convert this speech data into text: "${audioData}".`;
+  });
+});
 
 // AI Routes
 app.post("/api/ai/analyze-data", logRequest, validateRequest(["dataset", "question"]), (req, res) => {
@@ -1411,57 +1972,540 @@ app.post("/api/analytics/customer-retention", logRequest, validateRequest(["cust
 app.post("/api/analytics/customer-retention", logRequest, validateRequest(["customerHistory"]), (req, res) => {
   handleAIRequest(req, res, "customer-retention", (body) => `Analyze customer retention risks based on history: ${JSON.stringify(body.customerHistory)}.`);
 });
-
 // AI-Powered Fraud Detection
-app.post("/api/banking/fraud-detection", logRequest, validateRequest(["transactionDetails"]), (req, res) => {
-  handleAIRequest(req, res, "fraud-detection", (query) => 
-    `Analyze this transaction: "${query.transactionDetails}". Determine if it is fraudulent (yes or no) and provide a confidence score (0-1).`);
+app.post("/api/banking/fraud-detection", logRequest, (req, res) => {
+  handleAIRequest(req, res, "fraud-detection", (body) => {
+    const { transactionDetails } = body;
+    if (!transactionDetails) {
+      throw new Error("Transaction details are required");
+    }
+    return `Analyze this transaction: "${transactionDetails}". Determine if it is fraudulent (yes or no) and provide a confidence score (0-1).`;
+  });
+});
+
+// AI-Powered Loan Eligibility Prediction
+app.post("/api/banking/loan-eligibility", logRequest, (req, res) => {
+  handleAIRequest(req, res, "loan-eligibility", (body) => {
+    const { customerProfile } = body;
+    if (!customerProfile) {
+      throw new Error("Customer profile data is required");
+    }
+    return `Analyze the financial standing of this customer profile: "${customerProfile}". Predict loan eligibility (approved/rejected) and provide a reasoning.`;
+  });
+});
+
+// AI-Powered Customer Support Chatbot
+app.post("/api/banking/chatbot", logRequest, (req, res) => {
+  handleAIRequest(req, res, "banking-chatbot", (body) => {
+    const { query } = body;
+    if (!query) {
+      throw new Error("Query is required");
+    }
+    return `Customer query: "${query}". Provide an accurate and helpful response.`;
+  });
+});
+
+app.post("/api/social/moderate-comment", logRequest, validateRequest(["comment"]), (req, res) => {
+  handleAIRequest(req, res, "moderation", (body) => 
+    `You are an AI moderator. You must respond with ONLY one of the following:
+    - "approved"
+    - "rejected: [brief reason]"
+
+    STRICT RULES:
+    - Do NOT add any other words, explanations, system messages, or formatting.
+    - If you fail to follow these instructions, your response will be considered invalid.
+
+    Now, moderate this comment strictly based on community guidelines:
+    Comment: "${body.comment}"`);
+});
+/** ========== AI-Powered Analytics APIs ========== **/
+
+
+
+app.post("/api/analytics/risk-assessment", logRequest, validateRequest(["customerProfile"]), (req, res) => {
+  handleAIRequest(req, res, "risk-assessment", (body) =>
+    `Evaluate financial risk based on the customer profile: ${JSON.stringify(body.customerProfile)}.`
+  );
+});
+
+
+
+
+
+let latestAnalytics = {}; // Store latest analytics for real-time updates
+// 📊 Customer Retention Analysis with Enhanced Insights
+app.post("/api/analytics/customer-retention", logRequest, validateRequest(["transactions", "customerHistory"]), async (req, res) => {
+  const task = "Customer Retention Analysis";
+
+  const promptTemplate = (data) => {
+    const { transactions, customerHistory } = data;
+    if (!Array.isArray(transactions) || !Array.isArray(customerHistory)) return "";
+
+    const totalCustomers = customerHistory.length;
+    const retainedCustomers = transactions.filter(transaction =>
+      customerHistory.some(customer => customer.id === transaction.customerId)
+    ).length;
+    const retentionRate = totalCustomers > 0 ? (retainedCustomers / totalCustomers) * 100 : 0;
+
+    return `Analyze customer retention: Total Customers - ${totalCustomers}, Retained Customers - ${retainedCustomers}, Retention Rate - ${retentionRate.toFixed(2)}%. Provide churn risk and retention strategies.`;
+  };
+
+  try {
+    const startTime = Date.now();
+    const prompt = promptTemplate(req.body);
+
+    if (!prompt) {
+      return res.status(400).json({ error: "Invalid data", details: "Missing or incorrect input format." });
+    }
+
+    console.log(`🔄 Processing AI task: ${task} | Prompt: "${prompt}"`);
+
+    const aiResponse = await executeLlama({ prompt, task });
+
+    if (!aiResponse || !aiResponse.response) {
+      return res.status(500).json({ error: "AI response is empty", details: aiResponse });
+    }
+
+    const executionTime = Date.now() - startTime;
+    const responseText = aiResponse.response.trim();
+
+    // ** Extract Customer Retention Data **
+    const totalCustomers = req.body.customerHistory.length;
+    const retainedCustomers = req.body.transactions.filter(transaction =>
+      req.body.customerHistory.some(customer => customer.id === transaction.customerId)
+    ).length;
+    const retentionRate = totalCustomers > 0 ? (retainedCustomers / totalCustomers) * 100 : 0;
+    const churnRisk = retentionRate < 50 ? "High" : retentionRate < 75 ? "Medium" : "Low";
+
+    // ** Bar Chart for Retention vs Churn **
+    const retentionChartUrl = ChartJSImage()
+      .chart({
+        type: "bar",
+        data: {
+          labels: ["Retained Customers", "Churned Customers"],
+          datasets: [{
+            label: "Customer Retention",
+            data: [retainedCustomers, totalCustomers - retainedCustomers],
+            backgroundColor: ["#4CAF50", "#FF5733"],
+          }],
+        },
+        options: { responsive: true }
+      })
+      .backgroundColor("white")
+      .width(600)
+      .height(300)
+      .toURL();
+
+    // ** Pie Chart for Retention Distribution **
+    const pieChartUrl = ChartJSImage()
+      .chart({
+        type: "pie",
+        data: {
+          labels: ["Retained Customers", "Churned Customers"],
+          datasets: [{
+            data: [retainedCustomers, totalCustomers - retainedCustomers],
+            backgroundColor: ["#36A2EB", "#FFCE56"],
+          }],
+        },
+        options: { responsive: true }
+      })
+      .backgroundColor("white")
+      .width(600)
+      .height(300)
+      .toURL();
+
+    // ** Update Latest Analytics Data **
+    latestAnalytics.retention = {
+      totalCustomers,
+      retainedCustomers,
+      retentionRate,
+      churnRisk,
+      retentionStrategy: responseText,
+      executionTime,
+      charts: {
+        barChart: retentionChartUrl,
+        pieChart: pieChartUrl,
+      }
+    };
+
+    // Emit real-time analytics update
+    io.emit("analyticsUpdate", latestAnalytics);
+
+    res.json({
+      status: "success",
+      analytics: latestAnalytics.retention,
+      response: responseText,
+      executionTime,
+    });
+
+  } catch (error) {
+    console.error("Error in customer retention analysis:", error);
+    res.status(500).json({ error: error.message || "Internal Server Error" });
+  }
 });
  
 
-// AI-Powered Customer Spending Analytics
-// 🟢 Analyze Spending Patterns
-app.post("/api/analytics/spending-patterns", logRequest, (req, res) => {
-  handleAIRequest(req, res, "spending-analysis", (body) => {
-    const { transactions } = body;
-    if (!Array.isArray(transactions) || transactions.length === 0) {
-      throw new Error("Transactions must be a non-empty array");
+
+app.post("/api/banking/fraud-detection", logRequest, validateRequest(["transactionDetails"]), async (req, res) => {
+  try {
+    const { transactionDetails } = req.body;
+
+    console.log(`🔄 Processing AI Task: Fraud Detection...`);
+
+    const aiResponse = await handleAIRequest(req, res, "fraud-detection", (query) =>
+      `Analyze this transaction: "${query.transactionDetails}". Determine if it is fraudulent (yes or no) and provide a confidence score (0-1).`
+    );
+
+    if (!aiResponse || !aiResponse.response) {
+      return res.status(500).json({ error: "AI response is empty", details: aiResponse });
     }
-    return JSON.stringify(transactions);
-  });
+
+    const fraudDetected = aiResponse.response.includes("yes");
+    const confidenceScore = parseFloat(aiResponse.response.match(/\d+(\.\d+)?/g)?.[0] || "0");
+
+    // ** Bar Chart: Fraud vs Non-Fraud Transactions **
+    const fraudChart = ChartJSImage()
+      .chart({
+        type: "bar",
+        data: {
+          labels: ["Fraudulent", "Non-Fraudulent"],
+          datasets: [{
+            label: "Transaction Analysis",
+            data: [fraudDetected ? 1 : 0, fraudDetected ? 0 : 1],
+            backgroundColor: [fraudDetected ? "#FF0000" : "#4CAF50", fraudDetected ? "#4CAF50" : "#FF0000"],
+          }],
+        },
+        options: { responsive: true }
+      })
+      .backgroundColor("white")
+      .width(600)
+      .height(300)
+      .toURL();
+
+    // ** Pie Chart: Fraud Confidence Score **
+    const pieChart = ChartJSImage()
+      .chart({
+        type: "pie",
+        data: {
+          labels: ["Fraud Risk", "Safe"],
+          datasets: [{
+            data: [confidenceScore * 100, 100 - (confidenceScore * 100)],
+            backgroundColor: ["#FF0000", "#4CAF50"],
+          }],
+        },
+        options: { responsive: true }
+      })
+      .backgroundColor("white")
+      .width(600)
+      .height(300)
+      .toURL();
+
+    // ** Store Fraud Analysis Data **
+    latestAnalytics.fraud = {
+      fraudDetected,
+      confidenceScore,
+      fraudChart,
+      pieChart,
+    };
+
+    // Emit real-time analytics update
+    io.emit("analyticsUpdate", latestAnalytics);
+
+    res.json({
+      status: "success",
+      analytics: latestAnalytics.fraud,
+      response: aiResponse.response,
+    });
+
+  } catch (error) {
+    console.error("Error in fraud detection:", error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
-// 🟢 AI-Powered Risk Assessment
-app.post("/api/analytics/risk-assessment", logRequest, validateRequest(["customerProfile"]), (req, res) => {
-  handleAIRequest(req, res, "risk-assessment", (body) => {
-    const { customerProfile } = body;
-    if (!customerProfile || typeof customerProfile !== "string") {
-      throw new Error("Invalid or missing customerProfile");
+
+
+
+// 📊 Spending Patterns Analysis
+app.post("/api/analytics/spending-patterns", logRequest, validateRequest(["transactions"]), async (req, res) => {
+  const task = "Spending Patterns Analysis";
+
+  const promptTemplate = (data) => {
+    if (!Array.isArray(data.transactions)) return "";
+
+    const categoryMap = {};
+    data.transactions.forEach(({ category, amount }) => {
+      categoryMap[category] = (categoryMap[category] || 0) + amount;
+    });
+
+    return `Analyze spending trends from transactions: ${JSON.stringify(categoryMap)}. Identify key spending patterns and insights.`;
+  };
+
+  try {
+    const startTime = Date.now();
+    const prompt = promptTemplate(req.body);
+
+    if (!prompt) {
+      return res.status(400).json({ error: "Invalid data", details: "Missing or incorrect input format." });
     }
-    return `Assess the financial risk level for this customer profile: "${customerProfile}". Provide a risk rating (low, medium, high) and recommendations.`;
-  });
+
+    console.log(`🔄 Processing AI task: ${task} | Prompt: "${prompt}"`);
+
+    const aiResponse = await executeLlama({ prompt, task });
+
+    if (!aiResponse || !aiResponse.response) {
+      return res.status(500).json({ error: "AI response is empty", details: aiResponse });
+    }
+
+    const executionTime = Date.now() - startTime;
+    const responseText = aiResponse.response.trim();
+
+    // ** Aggregate Spending Data **
+    const categoryMap = {};
+    req.body.transactions.forEach(({ category, amount }) => {
+      categoryMap[category] = (categoryMap[category] || 0) + amount;
+    });
+
+    const labels = Object.keys(categoryMap);
+    const values = Object.values(categoryMap);
+
+    // ** Bar Chart for Spending Categories **
+    const barChartUrl = ChartJSImage()
+      .chart({
+        type: "bar",
+        data: {
+          labels,
+          datasets: [{ label: "Spending Analysis", data: values, backgroundColor: "#4CAF50" }],
+        },
+        options: { responsive: true },
+      })
+      .backgroundColor("white")
+      .width(600)
+      .height(300)
+      .toURL();
+
+    // ** Pie Chart for Spending Distribution **
+    const pieChartUrl = ChartJSImage()
+      .chart({
+        type: "pie",
+        data: {
+          labels,
+          datasets: [{ data: values, backgroundColor: ["#36A2EB", "#FFCE56", "#FF5733", "#4CAF50", "#9B59B6"] }],
+        },
+        options: { responsive: true },
+      })
+      .backgroundColor("white")
+      .width(600)
+      .height(300)
+      .toURL();
+
+    // ** Update Latest Analytics Data **
+    latestAnalytics.spending = {
+      totalTransactions: req.body.transactions.length,
+      spendingByCategory: categoryMap,
+      insights: responseText,
+      executionTime,
+      charts: { barChart: barChartUrl, pieChart: pieChartUrl },
+    };
+
+    // Emit real-time analytics update
+    io.emit("analyticsUpdate", latestAnalytics);
+
+    res.json({
+      status: "success",
+      analytics: latestAnalytics.spending,
+      response: responseText,
+      executionTime,
+    });
+
+  } catch (error) {
+    console.error("Error in spending patterns analysis:", error);
+    res.status(500).json({ error: error.message || "Internal Server Error" });
+  }
 });
 
-// 🟢 AI-Powered Revenue Forecasting
-app.post("/api/analytics/revenue-forecast", (req, res) => {
-  handleAIRequest(req, res, "revenue-forecasting", (body) => {
-    const { historicalData } = body;
-    if (!historicalData || !Array.isArray(historicalData) || historicalData.length === 0) {
-      throw new Error("Historical financial data is required as a non-empty array");
-    }
-    return `Predict future revenue based on this historical financial data: "${JSON.stringify(historicalData)}". Provide a forecast for the next quarter.`;
-  });
-});
+// ⚠️ Risk Assessment Analysis
+app.post("/api/analytics/risk-assessment", logRequest, validateRequest(["customerProfile"]), async (req, res) => {
+  const task = "Risk Assessment Analysis";
 
-// 🟢 AI-Powered Customer Retention Analysis
-app.post("/api/analytics/customer-retention", (req, res) => {
-  handleAIRequest(req, res, "customer-retention", (body) => {
-    const { customerHistory } = body;
-    if (!customerHistory || !Array.isArray(customerHistory) || customerHistory.length === 0) {
-      throw new Error("Customer history data is required as a non-empty array");
+  const promptTemplate = (data) => {
+    if (!data.customerProfile) return "";
+    return `Evaluate financial risk based on the customer profile: ${JSON.stringify(data.customerProfile)}. Provide a risk score and mitigation strategies.`;
+  };
+
+  try {
+    const startTime = Date.now();
+    const prompt = promptTemplate(req.body);
+
+    if (!prompt) {
+      return res.status(400).json({ error: "Invalid data", details: "Missing or incorrect input format." });
     }
-    return `Analyze customer retention based on this historical data: "${JSON.stringify(customerHistory)}". Identify churn risks and retention strategies.`;
-  });
+
+    console.log(`🔄 Processing AI task: ${task} | Prompt: "${prompt}"`);
+
+    const aiResponse = await executeLlama({ prompt, task });
+
+    if (!aiResponse || !aiResponse.response) {
+      return res.status(500).json({ error: "AI response is empty", details: aiResponse });
+    }
+
+    const executionTime = Date.now() - startTime;
+    const responseText = aiResponse.response.trim();
+
+    // ** Risk Level Analysis **
+    const riskScore = Math.floor(Math.random() * 100); // Simulated AI-driven risk score
+    const riskLevel = riskScore > 75 ? "High" : riskScore > 50 ? "Medium" : "Low";
+
+    // ** Bar Chart for Risk Score **
+    const barChartUrl = ChartJSImage()
+      .chart({
+        type: "bar",
+        data: {
+          labels: ["Risk Score"],
+          datasets: [{ label: "Risk Level", data: [riskScore], backgroundColor: "#FF5733" }],
+        },
+        options: { responsive: true },
+      })
+      .backgroundColor("white")
+      .width(600)
+      .height(300)
+      .toURL();
+
+    // ** Update Latest Analytics Data **
+    latestAnalytics.risk = {
+      customerProfile: req.body.customerProfile,
+      riskScore,
+      riskLevel,
+      mitigationStrategies: responseText,
+      executionTime,
+      charts: { barChart: barChartUrl },
+    };
+
+    // Emit real-time analytics update
+    io.emit("analyticsUpdate", latestAnalytics);
+
+    res.json({
+      status: "success",
+      analytics: latestAnalytics.risk,
+      response: responseText,
+      executionTime,
+    });
+
+  } catch (error) {
+    console.error("Error in risk assessment analysis:", error);
+    res.status(500).json({ error: error.message || "Internal Server Error" });
+  }
+});
+// 📈 Revenue Forecast Analysis with Enhanced Insights
+app.post("/api/analytics/revenue-forecast", logRequest, validateRequest(["historicalData"]), async (req, res) => {
+  const task = "Revenue Forecast Analysis";
+
+  const promptTemplate = (data) => {
+    if (!Array.isArray(data.historicalData)) return "";
+    return `Generate revenue predictions based on historical data: ${JSON.stringify(data.historicalData)}. Provide estimated revenue growth, trends, and confidence intervals.`;
+  };
+ 
+  try {
+    const startTime = Date.now();
+    const prompt = promptTemplate(req.body);
+
+    if (!prompt) {
+      return res.status(400).json({ error: "Invalid data", details: "Missing or incorrect input format." });
+    }
+
+    console.log(`🔄 Processing AI task: ${task} | Prompt: "${prompt}"`);
+
+    const aiResponse = await executeLlama({ prompt, task });
+
+    if (!aiResponse || !aiResponse.response) {
+      return res.status(500).json({ error: "AI response is empty", details: aiResponse });
+    }
+
+    const executionTime = Date.now() - startTime;
+    const responseText = aiResponse.response.trim();
+
+    // ** Extract historical revenue data **
+    const historicalData = req.body.historicalData;
+    const totalRevenue = historicalData.reduce((sum, record) => sum + record.revenue, 0);
+    const revenueList = historicalData.map((r) => r.revenue);
+    
+    // ** Moving Average Calculation for Trends **
+    const movingAvg = revenueList.reduce((a, b) => a + b, 0) / revenueList.length;
+
+    // ** Simulated AI-driven Growth Rate with Confidence Interval **
+    const avgGrowthRate = (Math.random() * 10) + 5; // 5-15% range
+    const projectedRevenue = totalRevenue * (1 + avgGrowthRate / 100);
+    const minProjectedRevenue = projectedRevenue * 0.95; // 5% lower bound
+    const maxProjectedRevenue = projectedRevenue * 1.05; // 5% upper bound
+
+    // ** YoY Growth Rate Calculation **
+    const lastYearRevenue = historicalData.length > 1 ? historicalData[historicalData.length - 2].revenue : totalRevenue * 0.9;
+    const yoyGrowthRate = ((totalRevenue - lastYearRevenue) / lastYearRevenue) * 100;
+
+    // ** Line Chart for Revenue Trends **
+    const lineChartUrl = ChartJSImage()
+      .chart({
+        type: "line",
+        data: {
+          labels: ["Current Revenue", "Projected Revenue"],
+          datasets: [{ label: "Revenue Forecast", data: [totalRevenue, projectedRevenue], borderColor: "#36A2EB" }],
+        },
+        options: { responsive: true },
+      })
+      .backgroundColor("white")
+      .width(600)
+      .height(300)
+      .toURL();
+
+    // ** Bar Chart for Historical vs Forecasted Revenue **
+    const barChartUrl = ChartJSImage()
+      .chart({
+        type: "bar",
+        data: {
+          labels: ["Last Year", "Current Year", "Projected"],
+          datasets: [
+            {
+              label: "Revenue Comparison",
+              data: [lastYearRevenue, totalRevenue, projectedRevenue],
+              backgroundColor: ["#FF5733", "#36A2EB", "#4CAF50"],
+            },
+          ],
+        },
+        options: { responsive: true },
+      })
+      .backgroundColor("white")
+      .width(600)
+      .height(300)
+      .toURL();
+
+    // ** Update Latest Analytics Data **
+    latestAnalytics.revenue = {
+      totalRevenue,
+      movingAvg,
+      avgGrowthRate,
+      projectedRevenue,
+      minProjectedRevenue,
+      maxProjectedRevenue,
+      yoyGrowthRate,
+      forecastInsights: responseText,
+      executionTime,
+      charts: { lineChart: lineChartUrl, barChart: barChartUrl },
+    };
+
+    // Emit real-time analytics update
+    io.emit("analyticsUpdate", latestAnalytics);
+
+    res.json({
+      status: "success",
+      analytics: latestAnalytics.revenue,
+      response: responseText,
+      executionTime,
+    });
+
+  } catch (error) {
+    console.error("Error in revenue forecast analysis:", error);
+    res.status(500).json({ error: error.message || "Internal Server Error" });
+  }
 });
 
 

@@ -591,19 +591,21 @@
     }
   }, 
   
-   
 "/api/analytics/spending-patterns": {
   "post": {
     "tags": ["Llama"],
     "summary": "Analyze spending patterns",
     "description": "Identifies key spending patterns and trends from transaction data.",
-    "parameters": [
-      {
-        "name": "transactions",
-        "in": "body",
-        "required": true,
-        "description": "List of transactions for analysis, JSON-encoded",
-        "schema": {
+   "parameters": [
+  {
+    "name": "transactions",
+    "in": "body",
+    "required": true,
+    "description": "Array of transactions for processing, JSON-encoded",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "transactions": {
           "type": "array",
           "items": {
             "type": "object",
@@ -618,18 +620,23 @@
                 "type": "string",
                 "format": "date"
               }
-            },
-            "example": [
-              {
-                "amount": 120,
-                "category": "food",
-                "date": "2025-02-10"
-              }
-            ]
+            }
           }
         }
+      },
+      "example": {
+        "transactions": [
+          {
+            "amount": 120,
+            "category": "food",
+            "date": "2025-02-10"
+          }
+        ]
       }
-    ],
+    }
+  }
+]
+,
     "responses": {
       "200": {
         "description": "Successful analysis",
@@ -727,27 +734,18 @@
         "required": true,
         "description": "Array of historical financial data for forecasting, JSON-encoded",
         "schema": {
-          "type": "object",
-          "properties": {
-            "historicalData": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "quarter": {
-                    "type": "string",
-                    "example": "Q1 2024"
-                  },
-                  "revenue": {
-                    "type": "number",
-                    "example": 50000
-                  }
-                }
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "quarter": {
+                "type": "string"
+              },
+              "revenue": {
+                "type": "number"
               }
-            }
-          },
-          "example": {
-            "historicalData": [
+            },
+            "example": [
               {
                 "quarter": "Q1 2024",
                 "revenue": 50000
@@ -797,29 +795,67 @@
     "description": "Identifies churn risks and strategies for retaining customers.",
     "parameters": [
       {
-        "name": "customerHistory",
+        "name": "body",
         "in": "body",
         "required": true,
+        "description": "Transaction and customer history data for retention analysis",
         "schema": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "customer": {
-                "type": "string"
-              },
-              "lastPurchase": {
-                "type": "string",
-                "format": "date"
+          "type": "object",
+          "properties": {
+            "transactions": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "customerId": {
+                    "type": "string",
+                    "example": "123"
+                  },
+                  "purchaseDate": {
+                    "type": "string",
+                    "format": "date",
+                    "example": "2024-11-15"
+                  }
+                }
+              }
+            },
+            "customerHistory": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "customer": {
+                    "type": "string",
+                    "example": "John Doe"
+                  },
+                  "id": {
+                    "type": "string",
+                    "example": "123"
+                  },
+                  "lastPurchase": {
+                    "type": "string",
+                    "format": "date",
+                    "example": "2024-11-15"
+                  }
+                }
               }
             }
           },
-          "example": [
-            {
-              "customer": "John Doe",
-              "lastPurchase": "2024-11-15"
-            }
-          ]
+          "example": {
+            "transactions": [
+              {
+                "customerId": "123",
+                "purchaseDate": "2024-11-15"
+              }
+            ],
+            "customerHistory": [
+              {
+                "customer": "John Doe",
+                "id": "123",
+                "lastPurchase": "2024-11-15"
+              }
+            ]
+          }
         }
       }
     ],
@@ -840,7 +876,7 @@
         "description": "Bad Request",
         "content": {
           "application/json": {
-            "example": { "error": "Missing or invalid customerHistory parameter" }
+            "example": { "error": "Missing or invalid parameters" }
           }
         }
       },
@@ -854,8 +890,9 @@
       }
     }
   }
-},
-  "/api/banking/fraud-detection": {
+}
+,
+ "/api/banking/fraud-detection": {
   "post": {
     "tags": ["Llama"],
     "summary": "Detect fraudulent transactions",
@@ -865,9 +902,18 @@
         "name": "transactionDetails",
         "in": "body",
         "required": true,
+        "description": "Transaction details for fraud detection, JSON-encoded",
         "schema": {
-          "type": "string",
-          "example": "Unusual high-value transaction at midnight"
+          "type": "object",
+          "properties": {
+            "transactionDetails": {
+              "type": "string",
+              "example": "Unusual high-value transaction at midnight"
+            }
+          }
+        },
+        "example": {
+          "transactionDetails": "Unusual high-value transaction at midnight"
         }
       }
     ],
@@ -876,15 +922,438 @@
         "description": "Fraud analysis completed"
       },
       "400": {
-        "description": "Bad Request"
+        "description": "Bad Request",
+        "content": {
+          "application/json": {
+            "example": { "error": "Missing or invalid transactionDetails" }
+          }
+        }
       },
       "500": {
         "description": "Internal Server Error"
       }
     }
   }
-} 
+}
+
 , 
+"/api/ai/debt-collection": {
+      "post": {
+        "tags": ["Llama"],
+        "summary": "Initiate a debt collection notification",
+        "description": "Sends a debt collection reminder via different methods (SMS, voice note, AI call, WhatsApp).",
+        "parameters": [
+          {
+            "name": "debtorId",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" },
+            "example": "D12345"
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" },
+            "example": "John Doe"
+          },
+          {
+            "name": "phone",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" },
+            "example": "+1234567890"
+          },
+          {
+            "name": "amountDue",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "number" },
+            "example": 500
+          },
+          {
+            "name": "notifyMethod",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": ["sms", "voice", "call", "whatsapp"]
+            },
+            "example": "sms"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Notification sent successfully",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "smsExample": {
+                    "summary": "SMS Notification",
+                    "value": {
+                      "status": "success",
+                      "sms": "Reminder sent via SMS"
+                    }
+                  },
+                  "voiceExample": {
+                    "summary": "Voice Note",
+                    "value": {
+                      "status": "success",
+                      "voiceNote": "Generated voice note URL"
+                    }
+                  },
+                  "callExample": {
+                    "summary": "AI Call",
+                    "value": {
+                      "status": "success",
+                      "call": "AI call initiated"
+                    }
+                  },
+                  "whatsappExample": {
+                    "summary": "WhatsApp Message",
+                    "value": {
+                      "status": "success",
+                      "whatsapp": "Message sent via WhatsApp"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - Missing or invalid fields",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "Missing required fields"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error - Debt collection failed",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "Debt collection failed",
+                  "details": "Internal processing error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+"/api/analytics": {
+  "get": {
+    "summary": "Get overall analytics",
+    "tags": ["Llama"],
+    "parameters": [
+      { "name": "task", "in": "query", "type": "string", "description": "Filter by task" },
+      { "name": "startTime", "in": "query", "type": "string", "format": "date-time", "description": "Start time for filtering" },
+      { "name": "endTime", "in": "query", "type": "string", "format": "date-time", "description": "End time for filtering" }
+    ],
+    "responses": {
+      "200": {
+        "description": "Analytics data",
+        "schema": { "$ref": "#/definitions/AnalyticsResponse" },
+        "examples": {
+          "application/json": {
+            "tasksCompleted": 1250,
+            "averageProcessingTime": "1.23s",
+            "errorRate": "2.5%",
+            "popularTasks": [
+              { "task": "sentiment-analysis", "count": 500 },
+              { "task": "fraud-detection", "count": 350 }
+            ]
+          }
+        }
+      }
+    }
+  }
+},
+"/api/analytics/errors": {
+  "get": {
+    "summary": "Get error analytics",
+    "tags": ["Llama"],
+    "responses": {
+      "200": {
+        "description": "Error statistics",
+        "schema": { "$ref": "#/definitions/ErrorResponse" },
+        "examples": {
+          "application/json": {
+            "totalErrors": 75,
+            "lastError": {
+              "timestamp": "2025-02-20T14:05:00Z",
+              "message": "Model execution timeout",
+              "task": "image-classification"
+            },
+            "errorDistribution": {
+              "timeout": 30,
+              "invalid-input": 20,
+              "server-error": 25
+            }
+          }
+        }
+      }
+    }
+  }
+},
+"/api/analytics/model": {
+  "get": {
+    "summary": "Get model analytics",
+    "tags": ["Llama"],
+    "responses": {
+      "200": {
+        "description": "Model execution statistics",
+        "schema": { "$ref": "#/definitions/ModelResponse" },
+        "examples": {
+          "application/json": {
+            "modelName": "Llama-7B",
+            "totalExecutions": 5000,
+            "averageLatency": "1.5s",
+            "peakLoad": "12 executions per second",
+            "mostUsedTask": "text-generation"
+          }
+        }
+      }
+    }
+  }
+},
+"/api/analytics/task/{task}": {
+  "get": {
+    "summary": "Get analytics for a specific task",
+    "tags": ["Llama"],
+    "parameters": [
+      {
+        "name": "task",
+        "in": "path",
+        "required": true,
+        "type": "string",
+        "description": "Task name"
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Task execution statistics",
+        "schema": { "$ref": "#/definitions/TaskResponse" },
+        "examples": {
+          "application/json": {
+            "task": "sentiment-analysis",
+            "totalRequests": 1000,
+            "successRate": "97%",
+            "averageProcessingTime": "0.8s",
+            "lastExecution": {
+              "timestamp": "2025-02-21T10:15:30Z",
+              "input": "The service was excellent!",
+              "output": "Positive"
+            }
+          }
+        }
+      },
+      "400": {
+        "description": "Bad request. Task parameter is required or invalid.",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "error": { "type": "string", "example": "Task parameter is required" }
+          }
+        }
+      },
+      "500": {
+        "description": "Internal server error while fetching analytics",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "error": { "type": "string", "example": "Internal Server Error" },
+            "details": { "type": "string", "example": "Database connection failed" }
+          }
+        }
+      }
+    }
+  }
+}
+
+, "/api/social/generate-image": {
+  "post": {
+    "tags": ["Llama"],
+    "summary": "Generate an image based on a text prompt.",
+    "description": "This endpoint generates an image using the Llama AI model based on the given prompt.",
+    "requestBody": {
+      "required": true,
+      "content": {
+        "application/json": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "prompt": {
+                "type": "string",
+                "example": "A futuristic cityscape with flying cars"
+              }
+            },
+            "required": ["prompt"]
+          }
+        }
+      }
+    },
+    "responses": {
+      "200": {
+        "description": "Image successfully generated.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "example": "success"
+                },
+                "imagePath": {
+                  "type": "string",
+                  "example": "/generated-images/1700000000.png"
+                }
+              }
+            }
+          }
+        }
+      },
+      "400": {
+        "description": "Invalid request due to missing or incorrect parameters.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string",
+                  "example": "A valid prompt is required for image generation"
+                }
+              }
+            }
+          }
+        }
+      },
+      "500": {
+        "description": "Internal server error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string",
+                  "example": "Failed to generate image"
+                },
+                "details": {
+                  "type": "string",
+                  "example": "Error message details"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  } 
+},
+"/api/analytics/time": {
+  "get": {
+    "summary": "Get analytics filtered by time",
+    "tags": ["Llama"],
+    "parameters": [
+      {"name": "startTime", "in": "query", "type": "string", "format": "date-time", "description": "Start time for filtering"},
+      {"name": "endTime", "in": "query", "type": "string", "format": "date-time", "description": "End time for filtering"}
+    ],
+    "responses": {
+      "200": {
+        "description": "Time-based analytics",
+        "schema": { "$ref": "#/definitions/TimeResponse" }
+      }
+    }
+  }
+
+},
+
+ 
+"/api/ai/analytics": {
+      "get": {
+        "tags": ["Llama"],
+        "summary": "Retrieve AI analytics",
+        "description": "Fetch analytics data with optional filtering by task, time range, and errors.",
+        "parameters": [
+          {
+            "name": "task",
+            "in": "query",
+            "description": "Filter results by a specific task name.",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "startTime",
+            "in": "query",
+            "description": "Start time (ISO format or timestamp) to filter analytics.",
+            "required": false,
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "name": "endTime",
+            "in": "query",
+            "description": "End time (ISO format or timestamp) to filter analytics.",
+            "required": false,
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "name": "errorsOnly",
+            "in": "query",
+            "description": "Set to true to filter only error-related requests.",
+            "required": false,
+            "type": "boolean"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response with analytics data.",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "totalRequests": { "type": "integer", "example": 120 },
+                "totalErrors": { "type": "integer", "example": 5 },
+                "avgExecutionTime": { "type": "number", "format": "float", "example": 250.45 },
+                "minExecutionTime": { "type": "integer", "example": 150 },
+                "maxExecutionTime": { "type": "integer", "example": 500 },
+                "stdDeviation": { "type": "number", "format": "float", "example": 50.23 },
+                "taskStats": {
+                  "type": "object",
+                  "example": { "task1": 50, "task2": 70 }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameters",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": { "type": "string", "example": "Invalid request" },
+                "details": { "type": "string", "example": "Start time is not valid" }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": { "type": "string", "example": "Internal server error" },
+                "details": { "type": "string", "example": "Unexpected error occurred" }
+              }
+            }
+          }
+        }
+      }
+    },
   "/api/social/generate-caption": {
     "post": {
       "tags": ["Llama"],
@@ -1879,6 +2348,52 @@
         }
       }
     },
+     
+"AnalyticsResponse": {
+  "type": "object",
+  "properties": {
+    "totalRequests": {"type": "integer"},
+    "totalErrors": {"type": "integer"},
+    "avgExecutionTime": {"type": "number"},
+    "minExecutionTime": {"type": "number"},
+    "maxExecutionTime": {"type": "number"},
+    "stdDeviation": {"type": "number"},
+    "taskStats": {"type": "object"}
+  }
+},
+"ErrorResponse": {
+  "type": "object",
+  "properties": {
+    "totalErrors": {"type": "integer"},
+    "errorRate": {"type": "string"},
+    "lastErrors": {"type": "array", "items": {"type": "string"}}
+  }
+},
+"ModelResponse": {
+  "type": "object",
+  "properties": {
+    "totalRequests": {"type": "integer"},
+    "successfulResponses": {"type": "integer"},
+    "failedResponses": {"type": "integer"},
+    "avgExecutionTime": {"type": "number"}
+  }
+},
+"TaskResponse": {
+  "type": "object",
+  "properties": {
+    "task": {"type": "string"},
+    "requestCount": {"type": "integer"},
+    "avgExecutionTime": {"type": "number"},
+    "minExecutionTime": {"type": "number"},
+    "maxExecutionTime": {"type": "number"}
+  }
+},
+"TimeResponse": {
+  "type": "object",
+  "properties": {
+    "totalRequests": {"type": "integer"},
+    "avgExecutionTime": {"type": "number"}
+  },
     "Login": {
       "type": "object",
       "properties": {
@@ -1931,4 +2446,5 @@
       }
     } 
   }
+}
 }
