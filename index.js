@@ -10,7 +10,7 @@ const { graphqlHTTP } = require("express-graphql");
 const MODELS = require("./models/llama");
 const os = require('os');
 const { body, validationResult ,query} = require("express-validator");
-const PORT = 4000;
+const PORT = process.env.PORT || 4000;
 const { parentPort, workerData, isMainThread } = require("worker_threads");
 const cors = require("cors");
 
