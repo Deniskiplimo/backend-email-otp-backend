@@ -1,7 +1,7 @@
 const { llamacpp, streamText } = require("modelfusion");
 const axios = require("axios");
 
-// Simple cache to store responses for reuse (for short-term use)
+// Simple cache to store responses for reuse (with expiration)
 const responseCache = {};
 
 // Function to check if the server is available
@@ -33,12 +33,29 @@ async function checkServerHealth() {
     }
 }
 
-// Function to generate code (existing)
-async function codeLlama(instruction, language, port) {
-    const llamaSystemPrompt =
-        `You are an AI assistant here to help with programming tasks. ` +
-        `Your responses will be clear, concise, and code-oriented. ` +
-        `Please follow the instructions and generate the requested code in the specified language.`;
+// Retry logic with exponential backoff
+async function withRetry(func, retries = 3, delay = 2000) {
+    let attempt = 0;
+    while (attempt < retries) {
+        try {
+            return await func();
+        } catch (error) {
+            attempt++;
+            if (attempt < retries) {
+                const backoffDelay = delay * Math.pow(2, attempt); // Exponential backoff
+                console.log(`Retrying (${attempt}/${retries}) after ${backoffDelay / 1000}s...`);
+                await new Promise(resolve => setTimeout(resolve, backoffDelay));
+            } else {
+                console.error(`All ${retries} attempts failed. Returning error message.`);
+                throw new Error(`Failed after ${retries} attempts`);
+            }
+        }
+    }
+}
+
+// Enhanced code generation function
+async function codeLlama(instruction, language, port, retries = 3, timeout = 5000, debug = false) {
+    const llamaSystemPrompt = `You are an AI assistant here to help with programming tasks. Your responses will be clear, concise, and code-oriented.`;
 
     const api = llamacpp.Api({
         baseUrl: {
@@ -47,45 +64,61 @@ async function codeLlama(instruction, language, port) {
         },
     });
 
-    try {
-        const timeout = 5000;
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeout);
+    // Ensure the language is supported
+    const supportedLanguages = ["javascript", "python", "java", "go", "cpp", "ruby"];
+    if (!supportedLanguages.includes(language.toLowerCase())) {
+        return `Language "${language}" is not supported. Supported languages are: ${supportedLanguages.join(", ")}.`;
+    }
 
-        const textStream = await streamText({
-            signal: controller.signal,
-            model: llamacpp
-                .CompletionTextGenerator({
-                    api: api,
-                    temperature: 0,
-                    stopSequences: ["\n```"],
-                })
-                .withInstructionPrompt(),
-            prompt: {
-                system: llamaSystemPrompt,
-                instruction: instruction,
-                responsePrefix: `Here is the program in ${language}:\n\`\`\`${language}\n`,
-            },
-        });
+    const modelConfig = llamacpp.CompletionTextGenerator({
+        api: api,
+        temperature: 0.7,
+        stopSequences: ["\n```"],
+    }).withInstructionPrompt();
 
-        let response = "";
-        for await (const textPart of textStream) {
-            process.stdout.write(textPart);
-            response += textPart;
+    const requestPayload = {
+        system: llamaSystemPrompt,
+        instruction: instruction,
+        responsePrefix: `Here is the program in ${language}:\n\`\`\`${language}\n`,
+    };
+
+    const fetchRequest = async () => {
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+            const textStream = await streamText({
+                signal: controller.signal,
+                model: modelConfig,
+                prompt: requestPayload,
+            });
+
+            let response = "";
+            for await (const textPart of textStream) {
+                if (debug) console.log(`Generated: ${textPart}`);  // Optional debugging output
+                response += textPart;
+            }
+
+            clearTimeout(timeoutId);
+            return response;
+
+        } catch (error) {
+            clearTimeout(timeoutId);
+            if (debug) console.error("Error details:", error);
+            throw new Error(error.message || "An error occurred while generating the response.");
         }
+    };
 
-        clearTimeout(timeoutId);
-        return response;
-
+    // Retry logic for transient failures
+    try {
+        return await withRetry(fetchRequest, retries);
     } catch (error) {
-        console.error("❌ Error generating code:", error.message);
-        clearTimeout(timeoutId);
-        return "An error occurred while generating the response.";
+        return `Failed to generate code after ${retries} attempts. Please try again later.`;
     }
 }
 
-// Function to handle general chatbot responses
-async function generalChatbotResponse(prompt, port) {
+// General chatbot response function
+async function generalChatbotResponse(prompt, port, retries = 3, timeout = 5000, debug = false) {
     const llamaSystemPrompt = "You are a helpful chatbot. Respond to the user's questions and requests in a friendly, informative manner.";
 
     const api = llamacpp.Api({
@@ -95,8 +128,7 @@ async function generalChatbotResponse(prompt, port) {
         },
     });
 
-    try {
-        const timeout = 5000;
+    const fetchResponse = async () => {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeout);
 
@@ -118,231 +150,37 @@ async function generalChatbotResponse(prompt, port) {
 
         let response = "";
         for await (const textPart of textStream) {
-            process.stdout.write(textPart);
             response += textPart;
         }
 
         clearTimeout(timeoutId);
         return response;
+    };
 
+    try {
+        // Retry the request if it fails due to transient issues
+        return await withRetry(fetchResponse, retries);
     } catch (error) {
         console.error("❌ Error generating chatbot response:", error.message);
-        clearTimeout(timeoutId);
         return "An error occurred while generating the response.";
     }
 }
 
-// Function to explain code (new)
-async function explainCode(code, language, port) {
-    const llamaSystemPrompt =
-        `You are a helpful AI that explains code. ` +
-        `Please explain the following code in detail, line by line, to help the user understand how it works.`;
-
-    const api = llamacpp.Api({
-        baseUrl: {
-            host: "localhost",
-            port: Number(port),
-        },
-    });
-
-    try {
-        const timeout = 5000;
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-        const textStream = await streamText({
-            signal: controller.signal,
-            model: llamacpp
-                .CompletionTextGenerator({
-                    api: api,
-                    temperature: 0,
-                    stopSequences: ["\n"],
-                })
-                .withInstructionPrompt(),
-            prompt: {
-                system: llamaSystemPrompt,
-                instruction: `Please explain the following code in ${language}:\n\`\`\`${language}\n${code}\n\`\`\``,
-                responsePrefix: "Explanation: ",
-            },
-        });
-
-        let response = "";
-        for await (const textPart of textStream) {
-            process.stdout.write(textPart);
-            response += textPart;
-        }
-
-        clearTimeout(timeoutId);
-        return response;
-
-    } catch (error) {
-        console.error("❌ Error explaining code:", error.message);
-        clearTimeout(timeoutId);
-        return "An error occurred while explaining the code.";
-    }
-}
-
-// Function to debug code (new)
-async function debugCode(code, language, port) {
-    const llamaSystemPrompt =
-        `You are an AI assistant specializing in debugging code. ` +
-        `Please identify any issues with the following code and suggest improvements or fixes.`;
-
-    const api = llamacpp.Api({
-        baseUrl: {
-            host: "localhost",
-            port: Number(port),
-        },
-    });
-
-    try {
-        const timeout = 5000;
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-        const textStream = await streamText({
-            signal: controller.signal,
-            model: llamacpp
-                .CompletionTextGenerator({
-                    api: api,
-                    temperature: 0,
-                    stopSequences: ["\n"],
-                })
-                .withInstructionPrompt(),
-            prompt: {
-                system: llamaSystemPrompt,
-                instruction: `Please debug the following ${language} code:\n\`\`\`${language}\n${code}\n\`\`\``,
-                responsePrefix: "Debugging suggestion: ",
-            },
-        });
-
-        let response = "";
-        for await (const textPart of textStream) {
-            process.stdout.write(textPart);
-            response += textPart;
-        }
-
-        clearTimeout(timeoutId);
-        return response;
-
-    } catch (error) {
-        console.error("❌ Error debugging code:", error.message);
-        clearTimeout(timeoutId);
-        return "An error occurred while debugging the code.";
-    }
-}
-
-// Response Caching (example use case)
+// Response Caching (with expiration)
 async function getCachedResponse(key) {
-    if (responseCache[key]) {
+    if (responseCache[key] && Date.now() - responseCache[key].timestamp < 3600000) { // Cache expiration after 1 hour
         console.log("✅ Returning cached response");
-        return responseCache[key];
+        return responseCache[key].data;
     }
     return null;
 }
 
-// Function to generate unit tests for code (new)
-async function generateUnitTestsForCode(code, language, port) {
-    const llamaSystemPrompt =
-        `You are an AI assistant specializing in generating unit tests. ` +
-        `Given the following code, generate unit tests that ensure the correctness of the code.`;
-
-    const api = llamacpp.Api({
-        baseUrl: {
-            host: "localhost",
-            port: Number(port),
-        },
-    });
-
-    try {
-        const timeout = 5000;
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-        const textStream = await streamText({
-            signal: controller.signal,
-            model: llamacpp
-                .CompletionTextGenerator({
-                    api: api,
-                    temperature: 0,
-                    stopSequences: ["\n"],
-                })
-                .withInstructionPrompt(),
-            prompt: {
-                system: llamaSystemPrompt,
-                instruction: `Please generate unit tests for the following ${language} code:\n\`\`\`${language}\n${code}\n\`\`\``,
-                responsePrefix: "Unit Tests: ",
-            },
-        });
-
-        let response = "";
-        for await (const textPart of textStream) {
-            response += textPart;
-        }
-
-        clearTimeout(timeoutId);
-        return response;
-
-    } catch (error) {
-        console.error("❌ Error generating unit tests:", error.message);
-        clearTimeout(timeoutId);
-        return "An error occurred while generating unit tests.";
-    }
+async function cacheResponse(key, data) {
+    responseCache[key] = {
+        data,
+        timestamp: Date.now(),
+    };
 }
-// Function to handle general chatbot responses
-async function generalChatbotResponse(prompt, port) {
-    const llamaSystemPrompt = "You are a helpful chatbot. Respond to the user's questions and requests in a friendly, informative manner.";
-
-    const api = llamacpp.Api({
-        baseUrl: {
-            host: "localhost",
-            port: Number(port),
-        },
-    });
-
-    try {
-        const timeout = 5000;
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-        const textStream = await streamText({
-            signal: controller.signal,
-            model: llamacpp
-                .CompletionTextGenerator({
-                    api: api,
-                    temperature: 0.7,
-                    stopSequences: ["\n"],
-                })
-                .withInstructionPrompt(),
-            prompt: {
-                system: llamaSystemPrompt,
-                instruction: prompt,
-                responsePrefix: "Chatbot: ",
-            },
-        });
-
-        let response = "";
-        for await (const textPart of textStream) {
-            process.stdout.write(textPart);
-            response += textPart;
-        }
-
-        clearTimeout(timeoutId);
-        // Check the server health before interacting with the chat API
-        if (await checkServerHealth()) {
-            const apiResponse = await sendMessageToChatAPI(response);
-            return apiResponse; // Send the chatbot's response to the API
-        }
-
-        return response;
-
-    } catch (error) {
-        console.error("❌ Error generating chatbot response:", error.message);
-        clearTimeout(timeoutId);
-        return "An error occurred while generating the response.";
-    }
-}
-
 // Function to send a chat message to the API
 async function sendMessageToChatAPI(message) {
     const apiUrl = 'http://localhost:3000/api/chat'; // Endpoint for your chat API
@@ -412,18 +250,15 @@ async function refactorCode(code, language, port) {
         clearTimeout(timeoutId);
         return "An error occurred while refactoring the code.";
     }
-}
-
+} 
+ 
 // Export functions for external use
-module.exports = {
+module.exports = { 
     codeLlama,
-    refactorCode,
     generalChatbotResponse,
     sendMessageToChatAPI,
-    explainCode,
-    debugCode,
     checkServerAvailability,
     checkServerHealth,
     getCachedResponse,
-    generateUnitTestsForCode,
+    cacheResponse,
 };

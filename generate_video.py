@@ -2,6 +2,7 @@ import os
 import sys
 import webbrowser
 import cv2
+import numpy as np
 import ffmpeg
 import codecs
 import argparse
@@ -15,17 +16,39 @@ def ensure_file_exists(file_path):
         print(f"⚠️ Warning: {file_path} not found. Please provide a valid video file.", file=sys.stderr)
         sys.exit(1)
 
-def process_video(input_video, text, output, format):
-    """Overlay text on an existing video and optionally add background music."""
-    try:
-        ensure_file_exists(input_video)  # Check if input video exists
+def generate_background_video(output_path):
+    """Generate a simple background video using OpenCV (black screen with text)."""
+    print("⏳ Generating background video...")
 
+    width, height = 1280, 720  # Video resolution
+    fps = 30
+    duration = 10  # seconds of video
+
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    video_writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+
+    # Create a black screen video
+    for _ in range(fps * duration):  # Duration in frames
+        frame = 255 * np.ones((height, width, 3), dtype=np.uint8)
+        video_writer.write(frame)
+
+    video_writer.release()
+    print(f"✅ Background video generated at: {output_path}")
+
+def process_video(input_video, text, output, format="mp4"):
+    """Overlay text on a generated background video and optionally add background music."""
+    try:
         # Ensure the output directory exists
         output_dir = os.path.dirname(output)
         if output_dir and not os.path.exists(output_dir):
             os.makedirs(output_dir, exist_ok=True)
 
         output_file = f"{output}.{format}"
+
+        # If no background video provided, generate one
+        if not os.path.exists(input_video):
+            print("⚡ Background video not found. Generating a new one...")
+            generate_background_video(input_video)
 
         cap = cv2.VideoCapture(input_video)
         if not cap.isOpened():
@@ -99,9 +122,9 @@ def process_video(input_video, text, output, format):
         sys.exit(1)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Overlay text on a video.")
+    parser = argparse.ArgumentParser(description="Overlay text on a video and optionally add background music.")
     parser.add_argument("--text", required=True, help="Text to overlay on the video")
-    parser.add_argument("--input", required=True, help="Path to the input video file")
+    parser.add_argument("--input", required=False, default="generated_background.mp4", help="Path to the input video file (generated if not provided)")
     parser.add_argument("--output", required=True, help="Output video file name (without extension)")
     parser.add_argument("--format", default="mp4", choices=["mp4", "avi", "mov"], help="Video format")
 

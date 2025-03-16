@@ -1497,41 +1497,6 @@ app.post("/api/ai/grammar-check", logRequest, validateRequest(["text"]), (req, r
 });
 
 
-const audioDir = path.join(__dirname, "generated_audio");
-if (!fs.existsSync(audioDir)) {
-  fs.mkdirSync(audioDir, { recursive: true });
-}
-
-app.post(
-  "/api/ai/video-to-text",
-  logRequest,
-  validateRequest(["videoUrl"]),
-  (req, res) => {
-    handleAIRequest(req, res, "video-to-text", (body) => {
-      const videoUrl = body.videoUrl;
-      const videoPath = path.join(videosDir, path.basename(videoUrl));
-      const audioPath = path.join(audioDir, path.basename(videoPath, path.extname(videoPath)) + ".wav");
-
-      if (!fs.existsSync(videoPath)) {
-        throw new Error(`❌ Video file not found: ${videoPath}`);
-      }
-
-      console.log(`🎥 Extracting audio from: ${videoPath}`);
-      try {
-        execSync(`ffmpeg -i "${videoPath}" -ar 16000 -ac 1 -c:a pcm_s16le "${audioPath}"`, { stdio: "inherit" });
-      } catch (error) {
-        throw new Error(`⚠️ Failed to extract audio: ${error.message}`);
-      }
-
-      console.log(`🔊 Audio extracted: ${audioPath}`);
-
-      // Return transcription prompt for LLaMA
-      return `Transcribe the following audio into text: ${audioPath}`;
-    });
-  }
-);
-
-
 app.post("/api/ai/chatbot", logRequest, validateRequest(["message"]), (req, res) => {
   try {
     const message = req.body.message;
@@ -1551,38 +1516,50 @@ app.post("/api/ai/chatbot", logRequest, validateRequest(["message"]), (req, res)
     
  
 // Ensure the videos directory exists
-const videosDir = path.join(__dirname, "generated_videos");
+const videosDir = path.join(__dirname, 'generated_videos');
 if (!fs.existsSync(videosDir)) {
   fs.mkdirSync(videosDir, { recursive: true });
 }
 
 // Define the generated background path
-const generatedBackgroundPath = path.join(videosDir, "generated_background.mp4");
+const generatedBackgroundPath = path.join(videosDir, 'generated_background.mp4');
 
 // Function to generate a dynamic background video
 function generateBackgroundVideo(callback) {
   const pythonExecutable =
-    process.platform === "win32"
-      ? path.join(__dirname, "venv", "Scripts", "python.exe")
-      : path.join(__dirname, "venv", "bin", "python");
+    process.platform === 'win32'
+      ? path.join(__dirname, 'venv', 'Scripts', 'python.exe')
+      : path.join(__dirname, 'venv', 'bin', 'python');
 
-  const backgroundScript = path.join(__dirname, "generate_background.py");
+  const backgroundScript = path.join(__dirname, 'generate_background.py');
 
   const command = `"${pythonExecutable}" "${backgroundScript}" --output "${generatedBackgroundPath}"`;
 
-  console.log("⏳ Generating background video...");
+  console.log('⏳ Generating background video...');
 
   try {
-    execSync(command, { stdio: "inherit" });
-    console.log(`✅ Background video generated at: ${generatedBackgroundPath}`);
-    callback(null); // No error, proceed
+    execSync(command, { stdio: 'inherit' });
+    // Check if the video file is valid after generation
+    if (fs.existsSync(generatedBackgroundPath)) {
+      const stats = fs.statSync(generatedBackgroundPath);
+      if (stats.size > 0) {
+        console.log(`✅ Background video generated at: ${generatedBackgroundPath}`);
+        callback(null); // No error, proceed
+      } else {
+        console.error('❌ Generated background video is empty');
+        callback(new Error('Generated background video is empty'));
+      }
+    } else {
+      console.error('❌ Background video not generated');
+      callback(new Error('Background video not generated'));
+    }
   } catch (error) {
-    console.warn(`⚠️ Background generation failed, but proceeding anyway.`);
-    callback(null); // Proceed even if background generation fails
+    console.error(`⚠️ Background generation failed: ${error.message}`);
+    callback(new Error('Background generation failed'));
   }
 }
 
-app.post("/api/ai/text-to-video", async (req, res) => {
+app.post('/api/ai/text-to-video', async (req, res) => {
   try {
     const { text } = req.body;
     if (!text) {
@@ -1592,30 +1569,35 @@ app.post("/api/ai/text-to-video", async (req, res) => {
     console.log(`🎥 Generating video for: "${text}"`);
 
     // Define video output path
-    const videoFilename = `${text.replace(/\s+/g, "_")}.mp4`;
+    const videoFilename = `${text.replace(/\s+/g, '_')}.mp4`;
     const videoPath = path.join(videosDir, videoFilename);
 
     // Ensure background is generated before proceeding
     if (!fs.existsSync(generatedBackgroundPath)) {
-      generateBackgroundVideo(() => {
+      console.log('⚡ Background video not found. Generating now...');
+      generateBackgroundVideo((error) => {
+        if (error) {
+          return res.status(500).json({ error: 'Failed to generate background video', details: error.message });
+        }
         processVideo(text, videoPath, res);
       });
     } else {
       processVideo(text, videoPath, res);
     }
   } catch (error) {
-    console.error("❌ Error processing request:", error);
-    res.status(500).json({ error: "Internal Server Error", details: error.message });
+    console.error('❌ Error processing request:', error);
+    res.status(500).json({ error: 'Internal Server Error', details: error.message });
   }
 });
 
+// Function to handle video generation after background creation
 function processVideo(text, videoPath, res) {
   const pythonExecutable =
-    process.platform === "win32"
-      ? path.join(__dirname, "venv", "Scripts", "python.exe")
-      : path.join(__dirname, "venv", "bin", "python");
+    process.platform === 'win32'
+      ? path.join(__dirname, 'venv', 'Scripts', 'python.exe')
+      : path.join(__dirname, 'venv', 'bin', 'python');
 
-  const pythonScript = path.join(__dirname, "generate_video.py");
+  const pythonScript = path.join(__dirname, 'generate_video.py');
 
   // Execute Python script to generate the final video
   const command = `"${pythonExecutable}" "${pythonScript}" --text "${text}" --input "${generatedBackgroundPath}" --output "${videoPath}" --format "mp4"`;
@@ -1628,21 +1610,23 @@ function processVideo(text, videoPath, res) {
 
     if (error) {
       console.error(`❌ Video generation error: ${error.message}`);
-      return res.status(500).json({ error: "Video generation failed", details: stderr.trim() });
+      return res.status(500).json({ error: 'Video generation failed', details: stderr.trim() });
     }
 
     if (!fs.existsSync(videoPath)) {
       console.error(`❌ Video file not found: ${videoPath}`);
-      return res.status(500).json({ error: "Video file not found after generation" });
+      return res.status(500).json({ error: 'Video file not found after generation' });
     }
 
-    const videoUrl = `${res.req.protocol}://${res.req.get("host")}/videos/${path.basename(videoPath)}`;
-    res.json({ status: "success", videoUrl });
+    const videoUrl = `${res.req.protocol}://${res.req.get('host')}/videos/${path.basename(videoPath)}`;
+    res.json({ status: 'success', videoUrl });
   });
-}  
+}
 
 // Serve videos statically
-app.use("/videos", express.static(videosDir));
+app.use('/videos', express.static(videosDir));
+
+
 // AI-Powered Sentiment Analysis
 app.post("/api/social/sentiment-analysis", logRequest, validateRequest(["text"]), (req, res) => {
   handleAIRequest(req, res, "sentiment-analysis", (body) => `Analyze sentiment: \"${body.text}\".`);
