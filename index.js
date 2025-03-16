@@ -1,16 +1,16 @@
 require('dotenv').config();
 const { generateCode, summarizeText, translateText } = require('./generalLlama');
 const moment = require("moment");
-const { generateCodeWithCodeLlama } = require('./codeLlama');
+
 const path = require('path');
 const { llamacpp, streamText } = require("modelfusion");
 const ip = '8.8.8.8';
 const { buildSchema } = require("graphql");
 const { graphqlHTTP } = require("express-graphql");
 const MODELS = require("./models/llama");
-const os = require('os');  
+const os = require('os');
 const { body, validationResult ,query} = require("express-validator");
-const PORT = process.env.PORT || 4000;
+const PORT = 4000;
 const { parentPort, workerData, isMainThread } = require("worker_threads");
 const cors = require("cors");
 
@@ -24,7 +24,7 @@ const RefreshToken = require('./models/refreshTokenModel');
 const { generateAccessToken, generateRefreshToken } = require('./utils/tokenUtils');
 const User = require('./models/userModel');
 const helmet = require("helmet"); // Security middleware
-
+ 
 const swaggerUi = require('swagger-ui-express');
 const rateLimit = require('express-rate-limit');
 const swaggerDocument = require('./swagger.json');
