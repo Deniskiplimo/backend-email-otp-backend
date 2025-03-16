@@ -58,7 +58,7 @@ const transport = new winston.transports.DailyRotateFile({
   maxSize: '20m',                      // Max file size before rotation
   maxFiles: '14d'                      // Keep logs for 14 days
 });
-
+ 
 const logger = winston.createLogger({
   level: 'info',
   transports: [
