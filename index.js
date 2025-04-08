@@ -1000,9 +1000,8 @@ async function runLlamaModel({ prompt, model, socket, maxTokens, temperature, to
             `Your responses will be clear, concise, and code-oriented. ` +
             `Please follow the instructions and generate the requested code.`;
 
-        const api = llamacpp.Api({
-            baseUrl: `http://localhost:${port}`, // ✅ Fixed port usage
-        });
+            const api = llamacpp.Api({ baseUrl: `http://localhost:${port}` });
+
 
         try {
             const timeout = 7000; // Increased timeout for stability
