@@ -2793,7 +2793,7 @@ app.listen(PORT, async () => {
     await setupModel(4000);
 
     // Wait for AI model server to be ready
-    await waitForServer('http://localhost:4000', 5, 2000);
+    await waitForServer('https://backend-email-otp-backend-wzo6.onrender.com:4000', 5, 2000);
 
     console.log('AI model setup completed successfully!');
   } catch (error) {
