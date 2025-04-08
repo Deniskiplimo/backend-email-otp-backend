@@ -1141,8 +1141,50 @@ const logRequest = (req, res, next) => {
 app.post("/api/llama", logRequest, async (req, res) => {
   await handleLlamaRequest(req, res, executeLlama);
 });
-app.get("/api/llama", logRequest, async (req, res) => {
-  await handleLlamaRequest(req, res, executeLlama);
+// Endpoint to interact with the Llama model
+app.get('/api/llama', async (req, res) => {
+  const { prompt, temperature = 0.7, maxTokens = 150, topK = 50, nThreads = 4 } = req.body;
+
+  if (!prompt) {
+      return res.status(400).json({ error: "❌ Prompt is required!" });
+  }
+
+  try {
+      // Ensure Llama server is ready before processing
+      const isServerReady = await checkLlamaServer();
+      if (!isServerReady) {
+          return res.status(500).json({ error: "❌ Llama model server is not available." });
+      }
+
+      // Initialize Llama API
+      const api = new llamacpp.Api({ baseUrl: 'http://localhost:4000' });
+
+      // Set up the Llama model and generate text using the prompt
+      const textStream = await streamText({
+          model: new llamacpp.CompletionTextGenerator({
+              api,
+              temperature,
+              topK,
+              nThreads,
+          }).withInstructionPrompt(),
+          prompt: {
+              system: 'You are an AI assistant here to help with programming tasks.',
+              instruction: prompt,
+              responsePrefix: 'Here is the response:\n',
+          },
+      });
+
+      let response = '';
+      for await (const textPart of textStream) {
+          response += textPart;
+      }
+
+      return res.json({ response: response.trim() });
+
+  } catch (error) {
+      console.error("❌ Error generating response:", error);
+      return res.status(500).json({ error: "Failed to generate response", details: error.message });
+  }
 });
 // ✅ Completion API
 app.post("/completion", async (req, res) => {
