@@ -1,5 +1,5 @@
 # Ignore node_modules (installed dependencies)
-node_modules/
+
   
 # Ignore AI model files
 *.gguf

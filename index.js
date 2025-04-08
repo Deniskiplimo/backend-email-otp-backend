@@ -9,14 +9,14 @@ const { buildSchema } = require("graphql");
 const { graphqlHTTP } = require("express-graphql");
 const MODELS = require("./models/llama");
 const os = require('os'); 
-require('web-streams-polyfill');
-    
-const { Transform } = require('stream'); 
+require('web-streams-polyfill'); 
+      
+const { Transform } = require('stream');  
 const { body, validationResult ,query} = require("express-validator");
 const PORT = process.env.PORT || 3000;
 const { parentPort, workerData, isMainThread } = require("worker_threads");
 const cors = require("cors");
-
+  
 const morgan = require("morgan");
 const authenticateRefreshToken = require('./middleware/authenticateRefreshToken');
 const express = require('express');   
@@ -1000,9 +1000,9 @@ async function runLlamaModel({ prompt, model, socket, maxTokens, temperature, to
             `Your responses will be clear, concise, and code-oriented. ` +
             `Please follow the instructions and generate the requested code.`;
 
-        const api = llamacpp.Api({
-            baseUrl: `http://localhost:${port}`, // ✅ Fixed port usage
-        });
+            const api = llamacpp.Api({
+              baseUrl: "https://llama-backend.onrender.com",
+            });
 
         try {
             const timeout = 7000; // Increased timeout for stability
@@ -2693,6 +2693,7 @@ app.post("/api/analytics/revenue-forecast", logRequest, validateRequest(["histor
 // Ensure Express JSON middleware is enabled
 app.use(express.json());
 // Swagger configuration
+// Swagger definition
 const swaggerSpec = swaggerJsdoc({
   definition: {
     openapi: '3.0.0',
@@ -2703,7 +2704,12 @@ const swaggerSpec = swaggerJsdoc({
     },
     servers: [
       {
-        url: 'http://localhost:3000',
+        url: 'http://localhost:3000',  // Local development server URL
+        description: 'Local Development Server',  // Optional description
+      },
+      {
+        url: 'https://backend-email-otp-backend-wzo6.onrender.com',  // Production server URL
+        description: 'Production Server',  // Optional description
       },
     ],
   },
