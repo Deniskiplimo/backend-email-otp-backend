@@ -2693,6 +2693,7 @@ app.post("/api/analytics/revenue-forecast", logRequest, validateRequest(["histor
 // Ensure Express JSON middleware is enabled
 app.use(express.json());
 // Swagger configuration
+// Swagger definition
 const swaggerSpec = swaggerJsdoc({
   definition: {
     openapi: '3.0.0',
@@ -2703,7 +2704,12 @@ const swaggerSpec = swaggerJsdoc({
     },
     servers: [
       {
-        url: 'http://localhost:3000',
+        url: 'http://localhost:3000',  // Local development server URL
+        description: 'Local Development Server',  // Optional description
+      },
+      {
+        url: 'https://backend-email-otp-backend-wzo6.onrender.com',  // Production server URL
+        description: 'Production Server',  // Optional description
       },
     ],
   },

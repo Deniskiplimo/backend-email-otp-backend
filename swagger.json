@@ -5,14 +5,29 @@
     "version": "1.0.0",
     "description": "API for user registration, login, password reset, and OTP verification"
   },
-  "host": "localhost:3000",
-
+  "host": "backend-email-otp-backend-wzo6.onrender.com",
+  "basePath": "/",
   "tags": [
     {
       "name": "Authentication",
       "description": "API for user registration, login, and password reset"
     }
   ],
+  "schemes": [
+    "https"
+  ],
+  "x-servers": [
+    {
+      "url": "http://localhost:3000",
+      "description": "Local Development Server"
+    },
+    {
+      "url": "https://backend-email-otp-backend-wzo6.onrender.com",
+      "description": "Production Server"
+    }
+  ],
+
+
   "paths": {
     "/api/get-location": {
       "get": {
