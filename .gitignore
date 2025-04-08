@@ -7,7 +7,7 @@ node_modules/
 *.log
 
 # Ignore cache and build files
-.cache/
+.cache/  
 .vscode/
 .DS_Store
 # Ignore compiled executables

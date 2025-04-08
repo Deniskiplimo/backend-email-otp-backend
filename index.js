@@ -1,16 +1,19 @@
 require('dotenv').config();
 const { generateCode, summarizeText, translateText } = require('./generalLlama');
 const moment = require("moment");
-const { generateCodeWithCodeLlama } = require('./codeLlama');
+const swaggerJsdoc = require('swagger-jsdoc');
 const path = require('path');
 const { llamacpp, streamText } = require("modelfusion");
-const ip = '8.8.8.8';
+const ip = '8.8.8.8'; 
 const { buildSchema } = require("graphql");
 const { graphqlHTTP } = require("express-graphql");
 const MODELS = require("./models/llama");
-const os = require('os');
+const os = require('os'); 
+require('web-streams-polyfill');
+    
+const { Transform } = require('stream'); 
 const { body, validationResult ,query} = require("express-validator");
-const PORT = 4000;
+const PORT = process.env.PORT || 3000;
 const { parentPort, workerData, isMainThread } = require("worker_threads");
 const cors = require("cors");
 
@@ -24,7 +27,7 @@ const RefreshToken = require('./models/refreshTokenModel');
 const { generateAccessToken, generateRefreshToken } = require('./utils/tokenUtils');
 const User = require('./models/userModel');
 const helmet = require("helmet"); // Security middleware
-
+ 
 const swaggerUi = require('swagger-ui-express');
 const rateLimit = require('express-rate-limit');
 const swaggerDocument = require('./swagger.json');
@@ -58,7 +61,7 @@ const transport = new winston.transports.DailyRotateFile({
   maxSize: '20m',                      // Max file size before rotation
   maxFiles: '14d'                      // Keep logs for 14 days
 });
-
+ 
 const logger = winston.createLogger({
   level: 'info',
   transports: [
@@ -655,37 +658,48 @@ app.post('/api/logout', authenticateToken, async (req, res) => {
   }
 });
 // ✅ Helper function to download files
-async function downloadFile(url, outputPath) {
-  if (fs.existsSync(outputPath)) {
-    console.log(`${outputPath} already exists. Skipping download.`);
-    return;
-  }
 
-  console.log(`Downloading ${outputPath}...`);
-  const writer = fs.createWriteStream(outputPath);
-  const response = await axios({ url, method: "GET", responseType: "stream" });
-  const totalLength = response.headers["content-length"];
-  let downloadedLength = 0;
+// Enhanced downloadFile function with retries and progress
+async function downloadFile(url, outputPath, retries = 3, delayMs = 2000) {
+  try {
+    if (fs.existsSync(outputPath)) {
+      console.log(`${outputPath} already exists. Skipping download.`);
+      return;
+    }
 
-  response.data.on("data", (chunk) => {
-    downloadedLength += chunk.length;
-    process.stdout.write(`Downloaded ${(downloadedLength / totalLength * 100).toFixed(2)}%\r`);
-  });
+    console.log(`Downloading ${outputPath}...`);
+    const writer = fs.createWriteStream(outputPath);
+    const response = await axios({ url, method: "GET", responseType: "stream" });
+    const totalLength = response.headers["content-length"];
+    let downloadedLength = 0;
 
-  response.data.pipe(writer);
-
-  return new Promise((resolve, reject) => {
-    writer.on("finish", () => {
-      console.log(`\nDownload of ${outputPath} completed.`);
-      fs.chmodSync(outputPath, 0o755); // Add execute permissions
-      resolve();
+    response.data.on("data", (chunk) => {
+      downloadedLength += chunk.length;
+      process.stdout.write(`Downloaded ${(downloadedLength / totalLength * 100).toFixed(2)}% (${downloadedLength} of ${totalLength} bytes)\r`);
     });
-    writer.on("error", reject);
-  });
+
+    response.data.pipe(writer);
+
+    return new Promise((resolve, reject) => {
+      writer.on("finish", () => {
+        console.log(`\nDownload of ${outputPath} completed.`);
+        fs.chmodSync(outputPath, 0o755); // Add execute permissions
+        resolve();
+      });
+      writer.on("error", (err) => reject(new Error(`Error during download: ${err.message}`)));
+    });
+  } catch (error) {
+    if (retries > 0) {
+      console.log(`Error occurred during download. Retrying in ${delayMs}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+      return downloadFile(url, outputPath, retries - 1, delayMs); // Retry download
+    } else {
+      throw new Error(`Failed to download ${outputPath} after ${3 - retries + 1} attempts: ${error.message}`);
+    }
+  }
 }
 
-
-// ✅ Function to start the AI server
+// ✅ Enhanced function to set up the model with parallel downloads and error handling
 async function setupModel(port, modelName = "tinyLlama") {
   try {
     const model = MODELS[modelName]; // Get the selected model dynamically
@@ -693,6 +707,7 @@ async function setupModel(port, modelName = "tinyLlama") {
 
     // Download llamafile executable if not exists
     if (!fs.existsSync("llamafile.exe")) {
+      console.log("Downloading llamafile.exe...");
       await downloadFile(
         "https://github.com/Mozilla-Ocho/llamafile/releases/download/0.6/llamafile-0.6",
         "llamafile.exe"
@@ -701,8 +716,9 @@ async function setupModel(port, modelName = "tinyLlama") {
       console.log("llamafile.exe already exists, skipping download...");
     }
 
-    // Download selected model if not exists
+    // Download the selected model file if not exists
     if (!fs.existsSync(model.filename)) {
+      console.log(`Downloading model file ${model.filename}...`);
       await downloadFile(model.url, model.filename);
     } else {
       console.log(`${model.filename} already exists, skipping download...`);
@@ -722,6 +738,13 @@ async function setupModel(port, modelName = "tinyLlama") {
     throw error;
   }
 }
+
+// Example usage: setting up model with port 4000
+setupModel(4000, "tinyLlama").then(() => {
+  console.log("AI server setup complete.");
+}).catch((error) => {
+  console.error("Error during setup:", error.message);
+});
 
 // ✅ Function to wait for AI server readiness
 async function waitForServer(url, retries = 5, delayMs = 2000) {
@@ -745,31 +768,216 @@ console.log("Available Models:", MODELS);
 // Get the optimal number of threads
 const nThreadsDefault = Math.max(2, (os.availableParallelism ? os.availableParallelism() : os.cpus().length) - 1);
 
+// Simple Cache to Avoid Redundant Calls
+const responseCache = new Map();
+const analytics = {
+  cacheHits: 0,
+  errors: 0,
+  totalRequests: 0,
+  totalExecutionTime: 0,
+  threadUsage: {
+      [nThreadsDefault]: 0
+  },
+  taskUsage: {},
+  taskErrors: {},
+  avgResponseTime: {},
+  responseStats: {} // To track min/max response length per task
+};
+
+// Function to Execute Llama Model
 async function executeLlama(options = {}) {
-    const {
-        prompt,
-        model = "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
-        task = "default",
-        socket = null,
-        maxTokens = 256,
-        temperature = 0.7,
-        topK = 50,
-        nThreads = nThreadsDefault, // Universal thread optimization
-    } = options;
+  const {
+      prompt,
+      model = "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+      task = "default",
+      socket = null,
+      maxTokens = Math.min(512, Math.max(128, Math.ceil(prompt.length * 1.5))), // Dynamic Token Control
+      temperature = prompt.length > 100 ? 0.5 : 0.7, // Adaptive Temperature Decay
+      topK = 50,
+      topP = 0.9, // Added Nucleus Sampling
+      repetitionPenalty = 1.2, // Prevents AI from repeating itself
+      frequencyPenalty = 0.8, // Penalizes overused words
+      nThreads = nThreadsDefault,
+      useCache = true, // Enable caching for repeated queries
+      stopSequences = ["\n", "END"], // Stops unnecessary continuations
+      debug = false, // Enable detailed logs
+  } = options;
 
-    if (!prompt || typeof prompt !== "string" || prompt.trim() === "") {
-        console.error("❌ Invalid prompt received:", prompt);
-        return Promise.reject({
-            message: "❌ Invalid prompt",
-            details: "Prompt must be a non-empty string.",
-        });
-    }
+  // Validate Input
+  if (!prompt || typeof prompt !== "string" || prompt.trim() === "") {
+      console.error("❌ Invalid prompt received:", prompt);
+      analytics.errors++;
+      return Promise.reject({
+          message: "❌ Invalid prompt",
+          details: "Prompt must be a non-empty string.",
+      });
+  }
 
-    console.log(`📝 Running Llama with prompt: "${prompt}" using ${nThreads} threads`);
+  console.log(`📝 Running Llama with prompt: "${prompt}" using ${nThreads} threads`);
+  if (debug) console.log(`🔍 [DEBUG] Max Tokens: ${maxTokens}, Temp: ${temperature}`);
 
-    return runLlamaModel({ prompt, model, socket, maxTokens, temperature, topK, nThreads });
+  // Track total requests
+  analytics.totalRequests++;
+
+  // Track start time
+  const startTime = Date.now();
+
+  // Check Cache
+  if (useCache && responseCache.has(prompt)) {
+      console.log("✅ Returning cached response");
+      analytics.cacheHits++;
+      const elapsedTime = Date.now() - startTime;
+      analytics.totalExecutionTime += elapsedTime;
+      return responseCache.get(prompt);
+  }
+
+  try {
+      // Run the model
+      const result = await runLlamaModel({
+          prompt,
+          model,
+          socket,
+          maxTokens,
+          temperature,
+          topK,
+          topP, // Added
+          repetitionPenalty, // Added
+          frequencyPenalty, // Added
+          nThreads,
+          stopSequences, // Added
+      });
+
+      // Track elapsed time for execution
+      const elapsedTime = Date.now() - startTime;
+      analytics.totalExecutionTime += elapsedTime;
+
+      // Store in Cache
+      if (useCache) {
+          responseCache.set(prompt, result);
+      }
+
+      return result;
+  } catch (error) {
+      console.error("❌ Error executing Llama:", error.message);
+      analytics.errors++;
+      return { error: "Llama execution failed", details: error.message };
+  }
 }
 
+// Function to log analytics (could be extended to send this data to a remote server or store in a database)
+function logAnalytics() {
+  console.log("📊 Analytics Report:");
+  console.log(`Total Requests: ${analytics.totalRequests}`);
+  console.log(`Cache Hits: ${analytics.cacheHits}`);
+  console.log(`Total Errors: ${analytics.errors}`);
+  console.log(`Total Execution Time (ms): ${analytics.totalExecutionTime}`);
+  console.log(`Average Execution Time (ms): ${analytics.totalExecutionTime / analytics.totalRequests}`);
+  console.log("Thread Usage:", analytics.threadUsage);
+  console.log("Task Usage:", analytics.taskUsage);
+  console.log("Task Errors:", analytics.taskErrors);
+  console.log("Average Response Times:", analytics.avgResponseTime);
+  console.log("Response Stats (min/max length per task):", analytics.responseStats);
+}
+
+module.exports = { executeLlama, logAnalytics };
+
+// Generic AI Request Handler
+const handleAIRequest = async (req, res, task, promptTemplate) => {
+  try {
+      const startTime = Date.now(); // Start time tracking
+
+      // Generate the prompt using the provided template
+      const prompt = promptTemplate(req.body);
+      if (!prompt || typeof prompt !== "string" || prompt.trim() === "") {
+          return res.status(400).json({ error: "Invalid prompt", details: "Prompt cannot be empty" });
+      }
+
+      // Increment request analytics
+      analytics.totalRequests++;
+      analytics.taskUsage[task] = (analytics.taskUsage[task] || 0) + 1;
+
+      console.log(`🔍 [${task}] Processing request...`);
+
+      // Execute AI request
+      const response = await executeLlama({ prompt, task, stream: true });
+
+      // Validate Response
+      if (!response || (!response.response && typeof response !== "string")) {
+          console.error(`❌ [${task}] AI response is empty`);
+          trackError(task, "Empty Response");
+          return res.status(500).json({ error: "AI response is empty", details: response });
+      }
+
+      const executionTime = Date.now() - startTime;
+      const finalResponse = response.response ? response.response.trim() : response.trim();
+      const responseLength = finalResponse.length;
+
+      // Update Response Statistics
+      updateResponseStats(task, responseLength);
+
+      // Update Response Time Metrics
+      if (!analytics.avgResponseTime[task]) {
+          analytics.avgResponseTime[task] = executionTime;
+      } else {
+          analytics.avgResponseTime[task] =
+              (analytics.avgResponseTime[task] + executionTime) / 2;
+      }
+
+      console.log(
+          `✅ [${task}] Success in ${executionTime}ms | Length: ${responseLength} chars`
+      );
+
+      // Handle Streaming Response
+      if (response.stream) {
+          res.setHeader("Content-Type", "text/event-stream");
+          res.setHeader("Cache-Control", "no-cache");
+          res.setHeader("Connection", "keep-alive");
+
+          for await (const chunk of response.stream) {
+              res.write(`data: ${JSON.stringify({ status: "streaming", chunk })}\n\n`);
+          }
+          res.end();
+          return;
+      }
+
+      res.json({ status: "success", response: finalResponse });
+  } catch (error) {
+      console.error(`❌ [${task}] Error:`, error.message);
+      trackError(task, error.message);
+      handleError(res, error, `${task} failed`);
+  }
+};
+
+// Function to track errors per task
+const trackError = (task, message) => {
+  analytics.errors++;
+  analytics.taskErrors[task] = (analytics.taskErrors[task] || 0) + 1;
+  console.error(`❌ [${task}] Error recorded: ${message}`);
+};
+
+// Function to track response length statistics
+const updateResponseStats = (task, length) => {
+  if (!analytics.responseStats[task]) {
+      analytics.responseStats[task] = { min: length, max: length };
+  } else {
+      analytics.responseStats[task].min = Math.min(analytics.responseStats[task].min, length);
+      analytics.responseStats[task].max = Math.max(analytics.responseStats[task].max, length);
+  }
+};
+
+// Endpoint to Fetch Analytics
+const getAnalytics = (req, res) => {
+  res.json({
+      totalRequests: analytics.totalRequests,
+      taskUsage: analytics.taskUsage,
+      avgResponseTime: analytics.avgResponseTime,
+      errorCount: analytics.errors,
+      taskErrors: analytics.taskErrors,
+      responseStats: analytics.responseStats, // Includes min/max response lengths
+  });
+};
+
+module.exports = { handleAIRequest, getAnalytics };
 async function runLlamaModel({ prompt, model, socket, maxTokens, temperature, topK, nThreads, port = PORT }) { 
     return new Promise(async (resolve, reject) => {
         console.log("🚀 Executing Llama:", { port, prompt, maxTokens, temperature, topK, nThreads });
@@ -1143,19 +1351,8 @@ app.post("/api/ai/sentiment", async (req, res) => {
 
  
 
-// Generic AI Request Handler
-const handleAIRequest = async (req, res, task, promptTemplate) => {
-  try {
-    const prompt = promptTemplate(req.body);
-    const response = await executeLlama({ prompt, task });
-    if (!response || !response.response || response.response.trim() === "") {
-      return res.status(500).json({ error: "AI response is empty", details: response });
-    }
-    res.json({ status: "success", response: response.response.trim() });
-  } catch (error) {
-    handleError(res, error, `${task} failed`);
-  }
-};
+
+
 // API to Get Analytics by Time Range
 const { stringify } = require("flatted"); // Alternative to handle circular references
 
@@ -1303,41 +1500,6 @@ app.post("/api/ai/grammar-check", logRequest, validateRequest(["text"]), (req, r
 });
 
 
-const audioDir = path.join(__dirname, "generated_audio");
-if (!fs.existsSync(audioDir)) {
-  fs.mkdirSync(audioDir, { recursive: true });
-}
-
-app.post(
-  "/api/ai/video-to-text",
-  logRequest,
-  validateRequest(["videoUrl"]),
-  (req, res) => {
-    handleAIRequest(req, res, "video-to-text", (body) => {
-      const videoUrl = body.videoUrl;
-      const videoPath = path.join(videosDir, path.basename(videoUrl));
-      const audioPath = path.join(audioDir, path.basename(videoPath, path.extname(videoPath)) + ".wav");
-
-      if (!fs.existsSync(videoPath)) {
-        throw new Error(`❌ Video file not found: ${videoPath}`);
-      }
-
-      console.log(`🎥 Extracting audio from: ${videoPath}`);
-      try {
-        execSync(`ffmpeg -i "${videoPath}" -ar 16000 -ac 1 -c:a pcm_s16le "${audioPath}"`, { stdio: "inherit" });
-      } catch (error) {
-        throw new Error(`⚠️ Failed to extract audio: ${error.message}`);
-      }
-
-      console.log(`🔊 Audio extracted: ${audioPath}`);
-
-      // Return transcription prompt for LLaMA
-      return `Transcribe the following audio into text: ${audioPath}`;
-    });
-  }
-);
-
-
 app.post("/api/ai/chatbot", logRequest, validateRequest(["message"]), (req, res) => {
   try {
     const message = req.body.message;
@@ -1357,38 +1519,50 @@ app.post("/api/ai/chatbot", logRequest, validateRequest(["message"]), (req, res)
     
  
 // Ensure the videos directory exists
-const videosDir = path.join(__dirname, "generated_videos");
+const videosDir = path.join(__dirname, 'generated_videos');
 if (!fs.existsSync(videosDir)) {
   fs.mkdirSync(videosDir, { recursive: true });
 }
 
 // Define the generated background path
-const generatedBackgroundPath = path.join(videosDir, "generated_background.mp4");
+const generatedBackgroundPath = path.join(videosDir, 'generated_background.mp4');
 
 // Function to generate a dynamic background video
 function generateBackgroundVideo(callback) {
   const pythonExecutable =
-    process.platform === "win32"
-      ? path.join(__dirname, "venv", "Scripts", "python.exe")
-      : path.join(__dirname, "venv", "bin", "python");
+    process.platform === 'win32'
+      ? path.join(__dirname, 'venv', 'Scripts', 'python.exe')
+      : path.join(__dirname, 'venv', 'bin', 'python');
 
-  const backgroundScript = path.join(__dirname, "generate_background.py");
+  const backgroundScript = path.join(__dirname, 'generate_background.py');
 
   const command = `"${pythonExecutable}" "${backgroundScript}" --output "${generatedBackgroundPath}"`;
 
-  console.log("⏳ Generating background video...");
+  console.log('⏳ Generating background video...');
 
   try {
-    execSync(command, { stdio: "inherit" });
-    console.log(`✅ Background video generated at: ${generatedBackgroundPath}`);
-    callback(null); // No error, proceed
+    execSync(command, { stdio: 'inherit' });
+    // Check if the video file is valid after generation
+    if (fs.existsSync(generatedBackgroundPath)) {
+      const stats = fs.statSync(generatedBackgroundPath);
+      if (stats.size > 0) {
+        console.log(`✅ Background video generated at: ${generatedBackgroundPath}`);
+        callback(null); // No error, proceed
+      } else {
+        console.error('❌ Generated background video is empty');
+        callback(new Error('Generated background video is empty'));
+      }
+    } else {
+      console.error('❌ Background video not generated');
+      callback(new Error('Background video not generated'));
+    }
   } catch (error) {
-    console.warn(`⚠️ Background generation failed, but proceeding anyway.`);
-    callback(null); // Proceed even if background generation fails
+    console.error(`⚠️ Background generation failed: ${error.message}`);
+    callback(new Error('Background generation failed'));
   }
 }
 
-app.post("/api/ai/text-to-video", async (req, res) => {
+app.post('/api/ai/text-to-video', async (req, res) => {
   try {
     const { text } = req.body;
     if (!text) {
@@ -1398,30 +1572,35 @@ app.post("/api/ai/text-to-video", async (req, res) => {
     console.log(`🎥 Generating video for: "${text}"`);
 
     // Define video output path
-    const videoFilename = `${text.replace(/\s+/g, "_")}.mp4`;
+    const videoFilename = `${text.replace(/\s+/g, '_')}.mp4`;
     const videoPath = path.join(videosDir, videoFilename);
 
     // Ensure background is generated before proceeding
     if (!fs.existsSync(generatedBackgroundPath)) {
-      generateBackgroundVideo(() => {
+      console.log('⚡ Background video not found. Generating now...');
+      generateBackgroundVideo((error) => {
+        if (error) {
+          return res.status(500).json({ error: 'Failed to generate background video', details: error.message });
+        }
         processVideo(text, videoPath, res);
       });
     } else {
       processVideo(text, videoPath, res);
     }
   } catch (error) {
-    console.error("❌ Error processing request:", error);
-    res.status(500).json({ error: "Internal Server Error", details: error.message });
+    console.error('❌ Error processing request:', error);
+    res.status(500).json({ error: 'Internal Server Error', details: error.message });
   }
 });
 
+// Function to handle video generation after background creation
 function processVideo(text, videoPath, res) {
   const pythonExecutable =
-    process.platform === "win32"
-      ? path.join(__dirname, "venv", "Scripts", "python.exe")
-      : path.join(__dirname, "venv", "bin", "python");
+    process.platform === 'win32'
+      ? path.join(__dirname, 'venv', 'Scripts', 'python.exe')
+      : path.join(__dirname, 'venv', 'bin', 'python');
 
-  const pythonScript = path.join(__dirname, "generate_video.py");
+  const pythonScript = path.join(__dirname, 'generate_video.py');
 
   // Execute Python script to generate the final video
   const command = `"${pythonExecutable}" "${pythonScript}" --text "${text}" --input "${generatedBackgroundPath}" --output "${videoPath}" --format "mp4"`;
@@ -1434,21 +1613,23 @@ function processVideo(text, videoPath, res) {
 
     if (error) {
       console.error(`❌ Video generation error: ${error.message}`);
-      return res.status(500).json({ error: "Video generation failed", details: stderr.trim() });
+      return res.status(500).json({ error: 'Video generation failed', details: stderr.trim() });
     }
 
     if (!fs.existsSync(videoPath)) {
       console.error(`❌ Video file not found: ${videoPath}`);
-      return res.status(500).json({ error: "Video file not found after generation" });
+      return res.status(500).json({ error: 'Video file not found after generation' });
     }
 
-    const videoUrl = `${res.req.protocol}://${res.req.get("host")}/videos/${path.basename(videoPath)}`;
-    res.json({ status: "success", videoUrl });
+    const videoUrl = `${res.req.protocol}://${res.req.get('host')}/videos/${path.basename(videoPath)}`;
+    res.json({ status: 'success', videoUrl });
   });
-}  
+}
 
 // Serve videos statically
-app.use("/videos", express.static(videosDir));
+app.use('/videos', express.static(videosDir));
+
+
 // AI-Powered Sentiment Analysis
 app.post("/api/social/sentiment-analysis", logRequest, validateRequest(["text"]), (req, res) => {
   handleAIRequest(req, res, "sentiment-analysis", (body) => `Analyze sentiment: \"${body.text}\".`);
@@ -2511,24 +2692,58 @@ app.post("/api/analytics/revenue-forecast", logRequest, validateRequest(["histor
 
 // Ensure Express JSON middleware is enabled
 app.use(express.json());
+// Swagger configuration
+const swaggerSpec = swaggerJsdoc({
+  definition: {
+    openapi: '3.0.0',
+    info: {
+      title: 'Node.js Swagger API',
+      version: '1.0.0',
+      description: 'Test API with Swagger UI',
+    },
+    servers: [
+      {
+        url: 'http://localhost:3000',
+      },
+    ],
+  },
+  apis: ['./index.js'], // JSDoc comments live here
+});
+
+// Serve Swagger docs at /docs/swagger
+app.use('/docs/swagger', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
+// Example route with Swagger doc
+/**
+ * @swagger
+ * /hello:
+ *   get:
+ *     summary: Returns a hello message
+ *     responses:
+ *       200:
+ *         description: Successful response
+ */
+app.get('/hello', (req, res) => {
+  res.send({ message: 'Hello from Swagger API' });
+});
 
 // Swagger UI setup
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
 // Start the main server
-app.listen(3000, async () => {
+app.listen(PORT, async () => {
   try {
-    console.log(`Main server is running on port 3000`);
+    console.log(`Main server is running on port ${PORT}`);
 
-    // Set up the AI model asynchronously and ensure it's done before processing requests
-    await setupModel(4000);  // Start the AI model on port 4000
+    // Set up the AI model asynchronously
+    await setupModel(4000);
 
-    // Wait for the AI model server to be ready before processing requests
-    await waitForServer('http://localhost:4000', 5, 2000);  // 5 retries, 2 seconds delay between each
+    // Wait for AI model server to be ready
+    await waitForServer('http://localhost:4000', 5, 2000);
 
     console.log('AI model setup completed successfully!');
   } catch (error) {
     console.error('Error setting up AI model:', error);
-    process.exit(1); // Exit the server if model setup fails
+    process.exit(1);
   }
 });
