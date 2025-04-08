@@ -1141,7 +1141,9 @@ const logRequest = (req, res, next) => {
 app.post("/api/llama", logRequest, async (req, res) => {
   await handleLlamaRequest(req, res, executeLlama);
 });
-
+app.get("/api/llama", logRequest, async (req, res) => {
+  await handleLlamaRequest(req, res, executeLlama);
+});
 // ✅ Completion API
 app.post("/completion", async (req, res) => {
   try {
