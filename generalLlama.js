@@ -22,7 +22,9 @@ const checkServerAvailability = async (url, retries = 5, delayMs = 2000) => {
 // Main function to generate AI response
 async function generalLlama(instruction, port) {
     const llamaSystemPrompt = "You are an AI assistant designed to provide clear and direct responses.";
-    const serverUrl = `http://localhost:${port}`;
+
+    // Use the Render server URL
+    const serverUrl = `https://backend-email-otp-backend-wzo6.onrender.com`;  // Update this to your Render URL
 
     // Check if AI server is available
     const isServerReady = await checkServerAvailability(serverUrl);
@@ -31,8 +33,8 @@ async function generalLlama(instruction, port) {
     }
 
     try {
-        // Initialize Llama API
-        const api = new llamacpp.Api({ baseUrl: `http://localhost:${port}` });
+        // Initialize Llama API with the correct Render URL
+        const api = llamacpp.createApi({ baseUrl: serverUrl });
 
         // Generate AI response
         const textStream = await streamText({
@@ -52,7 +54,6 @@ async function generalLlama(instruction, port) {
         throw new Error("AI execution error: " + error.message);
     }
 }
-
 
 // Function to generate code using TinyLlama
 const generateCode = (language, instruction) => {

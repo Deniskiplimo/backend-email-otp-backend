@@ -979,70 +979,71 @@ const getAnalytics = (req, res) => {
 
 module.exports = { handleAIRequest, getAnalytics };
 async function runLlamaModel({ prompt, model, socket, maxTokens, temperature, topK, nThreads, port = PORT }) { 
-    return new Promise(async (resolve, reject) => {
-        console.log("🚀 Executing Llama:", { port, prompt, maxTokens, temperature, topK, nThreads });
+  return new Promise(async (resolve, reject) => {
+      console.log("🚀 Executing Llama:", { port, prompt, maxTokens, temperature, topK, nThreads });
 
-        if (!port) {
-            return reject({ message: "❌ Port is missing!" });
-        }
+      if (!port) {
+          return reject({ message: "❌ Port is missing!" });
+      }
 
-        // Retry connection if Llama server is unavailable
-        for (let attempt = 1; attempt <= 3; attempt++) {
-            const isServerReady = await checkServerAvailability(port);
-            if (isServerReady) break;
-            if (attempt === 3) return reject({ message: "❌ Llama server is not available after retries" });
-            console.log(`🔄 Retry ${attempt}/3: Waiting for Llama server...`);
-            await new Promise((res) => setTimeout(res, 2000));
-        }
+      // Retry connection if Llama server is unavailable
+      for (let attempt = 1; attempt <= 3; attempt++) {
+          const isServerReady = await checkServerAvailability(`https://backend-email-otp-backend-wzo6.onrender.com`);  // Using the Render server URL
+          if (isServerReady) break;
+          if (attempt === 3) return reject({ message: "❌ Llama server is not available after retries" });
+          console.log(`🔄 Retry ${attempt}/3: Waiting for Llama server...`);
+          await new Promise((res) => setTimeout(res, 2000));
+      }
 
-        const llamaSystemPrompt =
-            `You are an AI assistant here to help with programming tasks. ` +
-            `Your responses will be clear, concise, and code-oriented. ` +
-            `Please follow the instructions and generate the requested code.`;
+      const llamaSystemPrompt =
+          `You are an AI assistant here to help with programming tasks. ` +
+          `Your responses will be clear, concise, and code-oriented. ` +
+          `Please follow the instructions and generate the requested code.`;
 
-            llamacpp.createApi({ baseUrl: `http://localhost:${port}` });
+      // Initialize Llama API for Render server
+      const api = llamacpp.createApi({ baseUrl: `https://backend-email-otp-backend-wzo6.onrender.com` });  // Update to Render URL
 
+      try {
+          const timeout = 7000; // Increased timeout for stability
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-        try {
-            const timeout = 7000; // Increased timeout for stability
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), timeout);
+          const textStream = await streamText({
+              signal: controller.signal,
+              model: llamacpp
+                  .CompletionTextGenerator({
+                      api: api,
+                      temperature: temperature,
+                      stopSequences: ["\n```"],
+                  })
+                  .withInstructionPrompt(),
+              prompt: {
+                  system: llamaSystemPrompt,
+                  instruction: prompt,
+                  responsePrefix: `Here is the response:\n`,
+              },
+          });
 
-            const textStream = await streamText({
-                signal: controller.signal,
-                model: llamacpp
-                    .CompletionTextGenerator({
-                        api: api,
-                        temperature: temperature,
-                        stopSequences: ["\n```"],
-                    })
-                    .withInstructionPrompt(),
-                prompt: {
-                    system: llamaSystemPrompt,
-                    instruction: prompt,
-                    responsePrefix: `Here is the response:\n`,
-                },
-            });
+          let response = "";
+          for await (const textPart of textStream) {
+              process.stdout.write(textPart);
+              response += textPart;
+              if (socket) socket.emit("ai_response", { chunk: textPart });
+          }
 
-            let response = "";
-            for await (const textPart of textStream) {
-                process.stdout.write(textPart);
-                response += textPart;
-                if (socket) socket.emit("ai_response", { chunk: textPart });
-            }
-
-            clearTimeout(timeoutId);
-            resolve({
-                status: "success",
-                message: "Response generated successfully",
-                response: response.trim(),
-            });
-        } catch (error) {
-            console.error("❌ Error generating response:", error.message);
-            reject({ message: "Llama Execution Failed", details: error.message });
-        }
-    });
+          clearTimeout(timeoutId);
+          resolve({
+              status: "success",
+              message: "Response generated successfully",
+              response: response.trim(),
+          });
+      } catch (error) {
+          console.error("❌ Error generating response:", error.message);
+          reject({ message: "Llama Execution Failed", details: error.message });
+      }
+  });
 }
+
 
 
 // Check if the server is available
