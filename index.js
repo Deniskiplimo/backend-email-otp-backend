@@ -1000,9 +1000,7 @@ async function runLlamaModel({ prompt, model, socket, maxTokens, temperature, to
             `Your responses will be clear, concise, and code-oriented. ` +
             `Please follow the instructions and generate the requested code.`;
 
-            const api = llamacpp.Api({
-              baseUrl: "https://llama-backend.onrender.com",
-            });
+          
 
         try {
             const timeout = 7000; // Increased timeout for stability
