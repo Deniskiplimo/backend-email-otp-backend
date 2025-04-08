@@ -4,13 +4,13 @@ const moment = require("moment");
 const swaggerJsdoc = require('swagger-jsdoc');
 const path = require('path');
 const { llamacpp, streamText } = require("modelfusion");
-const ip = '8.8.8.8';
+const ip = '8.8.8.8'; 
 const { buildSchema } = require("graphql");
 const { graphqlHTTP } = require("express-graphql");
 const MODELS = require("./models/llama");
 const os = require('os');
 const { body, validationResult ,query} = require("express-validator");
-const PORT = 4000;
+const PORT = process.env.PORT || 3000;
 const { parentPort, workerData, isMainThread } = require("worker_threads");
 const cors = require("cors");
 
