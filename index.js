@@ -1141,9 +1141,12 @@ const logRequest = (req, res, next) => {
 app.post("/api/llama", logRequest, async (req, res) => {
   await handleLlamaRequest(req, res, executeLlama);
 });
+
 // Endpoint to interact with the Llama model
-app.get('/api/llama', async (req, res) => {
+app.post('/api/llama', async (req, res) => {
   const { prompt, temperature = 0.7, maxTokens = 150, topK = 50, nThreads = 4 } = req.body;
+
+  console.log("Received prompt:", prompt);  // Log the prompt to debug the request
 
   if (!prompt) {
       return res.status(400).json({ error: "❌ Prompt is required!" });
@@ -1157,7 +1160,7 @@ app.get('/api/llama', async (req, res) => {
       }
 
       // Initialize Llama API
-      const api = new llamacpp.Api({ baseUrl: 'http://localhost:4000' });
+      const api = new llamacpp.Api({ baseUrl: 'http://localhost:4000' });  // Adjust if using a different port
 
       // Set up the Llama model and generate text using the prompt
       const textStream = await streamText({
@@ -1186,6 +1189,7 @@ app.get('/api/llama', async (req, res) => {
       return res.status(500).json({ error: "Failed to generate response", details: error.message });
   }
 });
+
 // ✅ Completion API
 app.post("/completion", async (req, res) => {
   try {
