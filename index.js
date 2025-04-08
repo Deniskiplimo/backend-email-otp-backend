@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { generateCode, summarizeText, translateText } = require('./generalLlama');
 const moment = require("moment");
-
+const swaggerJsdoc = require('swagger-jsdoc');
 const path = require('path');
 const { llamacpp, streamText } = require("modelfusion");
 const ip = '8.8.8.8';
@@ -2689,24 +2689,58 @@ app.post("/api/analytics/revenue-forecast", logRequest, validateRequest(["histor
 
 // Ensure Express JSON middleware is enabled
 app.use(express.json());
+// Swagger configuration
+const swaggerSpec = swaggerJsdoc({
+  definition: {
+    openapi: '3.0.0',
+    info: {
+      title: 'Node.js Swagger API',
+      version: '1.0.0',
+      description: 'Test API with Swagger UI',
+    },
+    servers: [
+      {
+        url: 'http://localhost:3000',
+      },
+    ],
+  },
+  apis: ['./index.js'], // JSDoc comments live here
+});
+
+// Serve Swagger docs at /docs/swagger
+app.use('/docs/swagger', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
+// Example route with Swagger doc
+/**
+ * @swagger
+ * /hello:
+ *   get:
+ *     summary: Returns a hello message
+ *     responses:
+ *       200:
+ *         description: Successful response
+ */
+app.get('/hello', (req, res) => {
+  res.send({ message: 'Hello from Swagger API' });
+});
 
 // Swagger UI setup
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
 // Start the main server
-app.listen(3000, async () => {
+app.listen(PORT, async () => {
   try {
-    console.log(`Main server is running on port 3000`);
+    console.log(`Main server is running on port ${PORT}`);
 
-    // Set up the AI model asynchronously and ensure it's done before processing requests
-    await setupModel(4000);  // Start the AI model on port 4000
+    // Set up the AI model asynchronously
+    await setupModel(4000);
 
-    // Wait for the AI model server to be ready before processing requests
-    await waitForServer('http://localhost:4000', 5, 2000);  // 5 retries, 2 seconds delay between each
+    // Wait for AI model server to be ready
+    await waitForServer('http://localhost:4000', 5, 2000);
 
     console.log('AI model setup completed successfully!');
   } catch (error) {
     console.error('Error setting up AI model:', error);
-    process.exit(1); // Exit the server if model setup fails
+    process.exit(1);
   }
 });
