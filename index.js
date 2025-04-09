@@ -7,7 +7,7 @@ const { llamacpp, streamText } = require("modelfusion");
 const ip = '8.8.8.8'; 
 const { buildSchema } = require("graphql");
 const { graphqlHTTP } = require("express-graphql");
-
+const MODELS = require("./models/llama");
 const os = require('os'); 
 require('web-streams-polyfill'); 
       
@@ -657,15 +657,7 @@ app.post('/api/logout', authenticateToken, async (req, res) => {
     res.status(STATUS_CODES.INTERNAL_SERVER_ERROR).json({ error: 'Error logging out' });
   }
 });
-
-// Mock MODELS object for demonstration
-const MODELS = {
-  tinyLlama: {
-    name: "TinyLlama-1.1B-Chat",
-    filename: "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
-    url: "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
-  },
-};
+// ✅ Helper function to download files with retries and progress
 
 // ✅ Helper function to download files with retries and progress
 async function downloadFile(url, outputPath, retries = 3, delayMs = 2000) {
@@ -710,7 +702,7 @@ async function downloadFile(url, outputPath, retries = 3, delayMs = 2000) {
 }
 
 // ✅ Enhanced function to set up the model and run llamafile
-async function setupModel(port, modelName = "tinyLlama") {
+async function setupModel(port, modelName, MODELS) {
   try {
     const model = MODELS[modelName];
     if (!model) throw new Error(`Model '${modelName}' not found.`);
