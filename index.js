@@ -728,7 +728,7 @@ async function setupModel(port, modelName = "tinyLlama") {
     
     // Start the AI server with the selected model
     const command = `./llamafile.exe -m tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf --nobrowser --port 4000`;
-    execSync(command, (error, stdout, stderr) => {
+    exec(command, (error, stdout, stderr) => {
       if (error) return console.error(`Error: ${error.message}`);
       if (stderr) return console.error(`stderr: ${stderr}`);
       console.log(stdout);
