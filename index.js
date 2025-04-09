@@ -7,7 +7,7 @@ const { llamacpp, streamText } = require("modelfusion");
 const ip = '8.8.8.8'; 
 const { buildSchema } = require("graphql");
 const { graphqlHTTP } = require("express-graphql");
-const MODELS = require("./models/llama");
+
 const os = require('os'); 
 require('web-streams-polyfill'); 
       
