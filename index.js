@@ -10,7 +10,7 @@ const { graphqlHTTP } = require("express-graphql");
 const MODELS = require("./models/llama");
 const os = require('os'); 
 require('web-streams-polyfill'); 
-      
+const { execSync } = require("child_process"); 
 const { Transform } = require('stream');  
 const { body, validationResult ,query} = require("express-validator");
 const PORT = process.env.PORT || 3000;
@@ -728,7 +728,7 @@ async function setupModel(port, modelName = "tinyLlama") {
     
     // Start the AI server with the selected model
     const command = `./llamafile.exe -m tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf --nobrowser --port 4000`;
-    exec(command, (error, stdout, stderr) => {
+    execSync(command, (error, stdout, stderr) => {
       if (error) return console.error(`Error: ${error.message}`);
       if (stderr) return console.error(`stderr: ${stderr}`);
       console.log(stdout);
