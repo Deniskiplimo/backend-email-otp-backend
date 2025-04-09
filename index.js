@@ -657,9 +657,9 @@ app.post('/api/logout', authenticateToken, async (req, res) => {
     res.status(STATUS_CODES.INTERNAL_SERVER_ERROR).json({ error: 'Error logging out' });
   }
 });
-// ✅ Helper function to download files with retries and progress
+// ✅ Helper function to download files
 
-// ✅ Helper function to download files with retries and progress
+// Enhanced downloadFile function with retries and progress
 async function downloadFile(url, outputPath, retries = 3, delayMs = 2000) {
   try {
     if (fs.existsSync(outputPath)) {
@@ -670,77 +670,75 @@ async function downloadFile(url, outputPath, retries = 3, delayMs = 2000) {
     console.log(`Downloading ${outputPath}...`);
     const writer = fs.createWriteStream(outputPath);
     const response = await axios({ url, method: "GET", responseType: "stream" });
-    const totalLength = parseInt(response.headers["content-length"], 10);
+    const totalLength = response.headers["content-length"];
     let downloadedLength = 0;
 
     response.data.on("data", (chunk) => {
       downloadedLength += chunk.length;
-      process.stdout.write(
-        `Downloaded ${(downloadedLength / totalLength * 100).toFixed(2)}% (${downloadedLength} of ${totalLength} bytes)\r`
-      );
+      process.stdout.write(`Downloaded ${(downloadedLength / totalLength * 100).toFixed(2)}% (${downloadedLength} of ${totalLength} bytes)\r`);
     });
 
     response.data.pipe(writer);
 
     return new Promise((resolve, reject) => {
       writer.on("finish", () => {
-        console.log(`\n✅ Download of ${outputPath} completed.`);
-        fs.chmodSync(outputPath, 0o755); // Add execution permission for Linux
+        console.log(`\nDownload of ${outputPath} completed.`);
+        fs.chmodSync(outputPath, 0o755); // Add execute permissions
         resolve();
       });
       writer.on("error", (err) => reject(new Error(`Error during download: ${err.message}`)));
     });
   } catch (error) {
     if (retries > 0) {
-      console.log(`⚠️  Error downloading ${outputPath}. Retrying in ${delayMs}ms...`);
+      console.log(`Error occurred during download. Retrying in ${delayMs}ms...`);
       await new Promise(resolve => setTimeout(resolve, delayMs));
-      return downloadFile(url, outputPath, retries - 1, delayMs);
+      return downloadFile(url, outputPath, retries - 1, delayMs); // Retry download
     } else {
-      throw new Error(`❌ Failed to download ${outputPath} after ${3 - retries + 1} attempts: ${error.message}`);
+      throw new Error(`Failed to download ${outputPath} after ${3 - retries + 1} attempts: ${error.message}`);
     }
   }
 }
 
-// ✅ Enhanced function to set up the model and run llamafile
-async function setupModel(port, modelName, MODELS) {
+// ✅ Enhanced function to set up the model with parallel downloads and error handling
+async function setupModel(port, modelName = "tinyLlama") {
   try {
-    const model = MODELS[modelName];
-    if (!model) throw new Error(`Model '${modelName}' not found.`);
+    const model = MODELS[modelName]; // Get the selected model dynamically
+    if (!model) throw new Error(`Model '${modelName}' not found in MODELS.`);
 
-    const isWindows = process.platform === "win32";
-    const llamaBinary = isWindows ? "llamafile.exe" : "llamafile";
-    const llamaURL = "https://github.com/Mozilla-Ocho/llamafile/releases/download/0.6/llamafile-0.6";
-
-    // Download llamafile binary if needed
-    if (!fs.existsSync(llamaBinary)) {
-      console.log(`Downloading ${llamaBinary}...`);
-      await downloadFile(llamaURL, llamaBinary);
+    // Download llamafile executable if not exists
+    if (!fs.existsSync("llamafile.exe")) {
+      console.log("Downloading llamafile.exe...");
+      await downloadFile(
+        "https://github.com/Mozilla-Ocho/llamafile/releases/download/0.6/llamafile-0.6",
+        "llamafile.exe"
+      );
     } else {
-      console.log(`${llamaBinary} already exists, skipping download...`);
+      console.log("llamafile.exe already exists, skipping download...");
     }
 
-    // Download the model file if needed
+    // Download the selected model file if not exists
     if (!fs.existsSync(model.filename)) {
-      console.log(`Downloading model file: ${model.filename}...`);
+      console.log(`Downloading model file ${model.filename}...`);
       await downloadFile(model.url, model.filename);
     } else {
       console.log(`${model.filename} already exists, skipping download...`);
     }
 
-    console.log(`🚀 Starting AI server on port ${port} using model: ${model.name}...`);
+    console.log(`Starting AI server on port ${port} using model: ${model.name}...`);
+    
+    // Start the AI server with the selected model
+    const command = `./llamafile -m ${model.filename} --nobrowser --port ${port}`;
+exec(command, (error, stdout, stderr) => {
+  if (error) return console.error(`Error: ${error.message}`);
+  if (stderr) return console.error(`stderr: ${stderr}`);
+  console.log(stdout);
+});
 
-    const command = `./${llamaBinary} -m ${model.filename} --nobrowser --port ${port}`;
-    exec(command, (error, stdout, stderr) => {
-      if (error) return console.error(`❌ Error: ${error.message}`);
-      if (stderr) console.error(`stderr: ${stderr}`);
-      console.log(stdout);
-    });
   } catch (error) {
-    console.error("🔥 Setup error:", error.message);
+    console.error("Setup error:", error);
     throw error;
   }
 }
-
 
 // Example usage: setting up model with port 4000
 setupModel(4000, "tinyLlama").then(() => {
