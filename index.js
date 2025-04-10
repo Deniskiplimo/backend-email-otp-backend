@@ -10,7 +10,7 @@ const { graphqlHTTP } = require("express-graphql");
 const MODELS = require("./models/llama");
 const os = require('os'); 
 require('web-streams-polyfill'); 
-      
+
 const { Transform } = require('stream');  
 const { body, validationResult ,query} = require("express-validator");
 const PORT = process.env.PORT || 3000;
@@ -98,6 +98,22 @@ const ERROR_MESSAGES = {
   INTERNAL_ERROR: 'An unexpected error occurred. Please try again later.',
   // Add more error messages as needed
 };
+// Ensure Express JSON middleware is enabled
+// Enable CORS for all origins
+app.use(cors()); // This enables CORS for all API routes
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument)); // Swagger UI setup
+
+      // General AI routes
+
+      app.use('/api', otpRoutes);
+      app.use("/api", codeLlamaRoutes);  // CodeLlama endpoints
+      app.use("/api", generalLlamaRoutes);  // GeneralLlama endpoints
+
+
+
+app.get('/hello', (req, res) => {
+  res.send({ message: 'Hello from Swagger API' });
+});
  // Example of a route to refresh token
 app.post('/refresh-token', authenticateRefreshToken, (req, res) => {
   // Here, you can implement logic to generate a new access token
@@ -130,11 +146,6 @@ app.post('/api/refresh-token', async (req, res) => {
   }
 }); 
 
-      // General AI routes
-
-app.use('/api', otpRoutes);
-app.use("/api", codeLlamaRoutes);  // CodeLlama endpoints
-app.use("/api", generalLlamaRoutes);  // GeneralLlama endpoints
 // Connect to MongoDB  
   
 const MONGO_URI = process.env.MONGO_URI || "mongodb+srv://deniskiplimo593:Denis341170495@cluster0.xc7g7f1.mongodb.net/?retryWrites=true&w=majority&directConnection=true";
@@ -2738,56 +2749,11 @@ app.post("/api/analytics/revenue-forecast", logRequest, validateRequest(["histor
 });
 
 
-// Ensure Express JSON middleware is enabled
-app.use(express.json());
-// Swagger configuration
-// Swagger definition
-const swaggerSpec = swaggerJsdoc({
-  definition: {
-    openapi: '3.0.0',
-    info: {
-      title: 'Node.js Swagger API',
-      version: '1.0.0',
-      description: 'Test API with Swagger UI',
-    },
-    servers: [
-      {
-        url: 'http://localhost:3000',  // Local development server URL
-        description: 'Local Development Server',  // Optional description
-      },
-      {
-        url: 'https://backend-email-otp-backend-wzo6.onrender.com',  // Production server URL
-        description: 'Production Server',  // Optional description
-      },
-    ],
-  },
-  apis: ['./index.js'], // JSDoc comments live here
-});
-
-// Serve Swagger docs at /docs/swagger
-app.use('/docs/swagger', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-
-// Example route with Swagger doc
-/**
- * @swagger
- * /hello:
- *   get:
- *     summary: Returns a hello message
- *     responses:
- *       200:
- *         description: Successful response
- */
-app.get('/hello', (req, res) => {
-  res.send({ message: 'Hello from Swagger API' });
-});
-
-// Swagger UI setup
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
 // Start the main server
 app.listen(PORT, async () => {
   try {
-    console.log(`Main server is running on port ${PORT}`);
+    logger.info(`Main server is running on port ${PORT}`);
 
     // Set up the AI model asynchronously
     await setupModel(4000);
@@ -2795,9 +2761,9 @@ app.listen(PORT, async () => {
     // Wait for AI model server to be ready
     await waitForServer('http://localhost:4000', 5, 2000);
 
-    console.log('AI model setup completed successfully!');
+    logger.info('AI model setup completed successfully!');
   } catch (error) {
-    console.error('Error setting up AI model:', error);
+    logger.error('Error setting up AI model:', error);
     process.exit(1);
   }
 });

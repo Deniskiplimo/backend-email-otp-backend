@@ -14,6 +14,11 @@
             "date": 1744146784921,
             "name": "/home/denis/backend-email-otp-backend/utils/logs/error-2025-04-09.log",
             "hash": "80b5f2a74a36cd2d0f9c1678d87784fabf0cabe85e95dde8562a571f767de26d"
+        },
+        {
+            "date": 1744297739485,
+            "name": "/home/denis/backend-email-otp-backend/utils/logs/error-2025-04-10.log",
+            "hash": "cbf5bc3a6c37716fb9761bd9d6afa7a96bc7df996fdeee4e7b83ca285583356b"
         }
     ],
     "hashType": "sha256"
